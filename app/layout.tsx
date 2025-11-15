@@ -6,6 +6,7 @@ import { Suspense } from "react"
 import "./globals.css"
 import { ThemeProvider } from "@/components/theme-provider"
 import { ChatWidget } from "@/components/ai/chat-widget"
+import { ReduxProvider } from "@/store/redux/Provider"
 
 export const metadata: Metadata = {
   title: "AssetGuard",
@@ -32,11 +33,13 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning className={`${inter.variable} ${spaceGrotesk.variable} antialiased`}>
       <body className="font-sans bg-background text-foreground">
-        <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
-          <Suspense fallback={<div>Loading...</div>}>{children}</Suspense>
-          <ChatWidget />
-          <Analytics />
-        </ThemeProvider>
+        <ReduxProvider>
+          <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
+            <Suspense fallback={<div>Loading...</div>}>{children}</Suspense>
+            <ChatWidget />
+            <Analytics />
+          </ThemeProvider>
+        </ReduxProvider>
       </body>
     </html>
   )
