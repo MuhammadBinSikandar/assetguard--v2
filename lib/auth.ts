@@ -70,12 +70,13 @@ export function createAccessToken(payload: {
     },
     JWT_ACCESS_SECRET,
     {
-      algorithm: JWT_ALG,
       expiresIn,
-    }
+    } as jwt.SignOptions
   );
 
-  const expiresAt = new Date(Date.now() + ms(expiresIn));
+  // @ts-ignore - ms() accepts string and returns number
+  const expiresInMs: number = typeof expiresIn === 'string' ? ms(expiresIn) : expiresIn;
+  const expiresAt = new Date(Date.now() + expiresInMs);
 
   return { token, expiresAt, jti };
 }
@@ -101,12 +102,13 @@ export function createRefreshToken(userId: string): {
     },
     JWT_REFRESH_SECRET,
     {
-      algorithm: JWT_ALG,
       expiresIn,
-    }
+    } as jwt.SignOptions
   );
 
-  const expiresAt = new Date(Date.now() + ms(expiresIn));
+  // @ts-ignore - ms() accepts string and returns number
+  const expiresInMs: number = typeof expiresIn === 'string' ? ms(expiresIn) : expiresIn;
+  const expiresAt = new Date(Date.now() + expiresInMs);
 
   return { token, jti, expiresAt };
 }

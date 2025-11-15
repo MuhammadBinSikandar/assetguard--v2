@@ -249,7 +249,7 @@ export async function POST(request: NextRequest) {
       await prisma.refreshToken.updateMany({
         where: {
           id: {
-            in: sessionsToRevoke.map((s) => s.id),
+            in: sessionsToRevoke.map((s: { id: string }) => s.id),
           },
         },
         data: {

@@ -2,17 +2,64 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { Eye, EyeOff } from "lucide-react"
+import { useRouter, useSearchParams } from "next/navigation"
+import { Eye, EyeOff, AlertCircle } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Checkbox } from "@/components/ui/checkbox"
+import { useAuth } from "@/hooks/useAuth"
 
 export function LoginForm() {
+  const router = useRouter()
+  const searchParams = useSearchParams()
+  const { login } = useAuth()
+
+  const [email, setEmail] = React.useState("")
+  const [password, setPassword] = React.useState("")
+  const [rememberMe, setRememberMe] = React.useState(false)
   const [showPassword, setShowPassword] = React.useState(false)
 
+  const [loading, setLoading] = React.useState(false)
+  const [error, setError] = React.useState("")
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setError("")
+    setLoading(true)
+
+    try {
+      await login({
+        email: email.toLowerCase().trim(),
+        password,
+        rememberMe,
+      })
+
+      // Redirect to next page or dashboard
+      const next = searchParams.get('next')
+      router.push(next || '/dashboard')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Login failed. Please try again.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
   return (
-    <form className="space-y-6">
+    <form onSubmit={handleSubmit} className="space-y-6">
+      {/* Error Message */}
+      {error && (
+        <div className="rounded-md bg-red-500/10 border border-red-500/20 p-4">
+          <div className="flex items-start">
+            <AlertCircle className="size-5 text-red-500 mr-3 mt-0.5" />
+            <div>
+              <h3 className="text-sm font-medium text-red-500">Login failed</h3>
+              <p className="mt-1 text-sm text-red-400">{error}</p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Email */}
       <div className="space-y-2">
         <Label htmlFor="email" className="text-slate-200">
@@ -23,7 +70,10 @@ export function LoginForm() {
           type="email"
           autoComplete="email"
           placeholder="you@example.com"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
           className="bg-[#0f172a] border-slate-800 text-slate-100 placeholder:text-slate-400"
+          disabled={loading}
           required
         />
       </div>
@@ -39,7 +89,10 @@ export function LoginForm() {
             type={showPassword ? "text" : "password"}
             autoComplete="current-password"
             placeholder="••••••••"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
             className="bg-[#0f172a] border-slate-800 pr-10 text-slate-100 placeholder:text-slate-400"
+            disabled={loading}
             required
           />
           <button
@@ -56,7 +109,12 @@ export function LoginForm() {
       {/* Remember + Forgot */}
       <div className="flex items-center justify-between gap-4">
         <label className="inline-flex items-center gap-2">
-          <Checkbox id="remember" />
+          <Checkbox
+            id="remember"
+            checked={rememberMe}
+            onCheckedChange={(checked) => setRememberMe(checked === true)}
+            disabled={loading}
+          />
           <span className="text-sm text-slate-300">Remember me</span>
         </label>
         <Link href="/forgot-password" className="text-sm text-primary underline-offset-4 hover:underline">
@@ -65,14 +123,14 @@ export function LoginForm() {
       </div>
 
       {/* Submit */}
-      <Button type="submit" className="w-full">
-        Log In
+      <Button type="submit" className="w-full" disabled={loading}>
+        {loading ? "Logging in..." : "Log In"}
       </Button>
 
       {/* Divider */}
       <div className="text-center text-sm text-slate-300">
         {"Don't have an account? "}
-        <Link href="/signup" className="text-primary underline-offset-4 hover:underline">
+        <Link href="/register" className="text-primary underline-offset-4 hover:underline">
           Sign up
         </Link>
       </div>

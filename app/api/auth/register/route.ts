@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/db/prismaClient';
-import { hashPassword, validatePasswordStrength } from '@/lib/bcrypt';
-import { hashToken, isValidEmail, generateEmailVerificationToken } from '@/lib/auth';
+import { hashPassword, validatePasswordStrength, hashToken } from '@/lib/bcrypt';
+import { isValidEmail, generateEmailVerificationToken } from '@/lib/auth';
 import { sendVerificationEmail } from '@/lib/email';
 import { checkRateLimit } from '@/lib/rateLimit';
 import { createAuditLog } from '@/lib/logger';
