@@ -1,0 +1,110 @@
+// Prisma schema for AssetGuard Advanced Auth System
+// Supports PostgreSQL with Neon DB
+
+generator client {
+  provider = "prisma-client-js"
+  previewFeatures = ["fullTextSearch"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                    String                      @id @default(uuid())
+  email                 String                      @unique
+  passwordHash          String
+  name                  String?
+  roles                 String[]                    @default(["user"]) // ["admin"] or ["user", "buyer", "seller"]
+  emailVerified         Boolean                     @default(false)
+  twoFactorEnabled      Boolean                     @default(false)
+  twoFactorSecret       String?
+  failedLoginAttempts   Int                         @default(0)
+  lockedUntil           DateTime?
+  createdAt             DateTime                    @default(now())
+  updatedAt             DateTime                    @updatedAt
+
+  // Relations
+  refreshTokens         RefreshToken[]
+  emailVerification     EmailVerificationToken[]
+  passwordResets        PasswordResetToken[]
+  auditLogs             AuditLog[]
+
+  @@index([email])
+  @@map("users")
+}
+
+model RefreshToken {
+  id                String    @id @default(uuid())
+  user              User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId            String
+  hashedToken       String    @unique // bcrypt hash of the actual token
+  jti               String    @unique // JWT ID for tracking
+  device            String?
+  ip                String?
+  userAgent         String?
+  revoked           Boolean   @default(false)
+  revokedAt         DateTime?
+  revokedReason     String?   // "logout", "reuse_detected", "expired", "manual_revoke"
+  createdAt         DateTime  @default(now())
+  expiresAt         DateTime
+  replacedById      String?   @unique // Points to the new token ID after rotation
+  replacedToken     RefreshToken? @relation("TokenRotation", fields: [replacedById], references: [id], onDelete: SetNull)
+  replacedByToken   RefreshToken? @relation("TokenRotation")
+
+  @@index([userId])
+  @@index([hashedToken])
+  @@index([jti])
+  @@index([expiresAt])
+  @@map("refresh_tokens")
+}
+
+model EmailVerificationToken {
+  id         String   @id @default(uuid())
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId     String
+  tokenHash  String   @unique
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  consumed   Boolean  @default(false)
+  consumedAt DateTime?
+
+  @@index([userId])
+  @@index([tokenHash])
+  @@map("email_verification_tokens")
+}
+
+model PasswordResetToken {
+  id         String   @id @default(uuid())
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId     String
+  tokenHash  String   @unique
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+  consumed   Boolean  @default(false)
+  consumedAt DateTime?
+  ip         String?
+  userAgent  String?
+
+  @@index([userId])
+  @@index([tokenHash])
+  @@map("password_reset_tokens")
+}
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  user       User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+  userId     String?
+  action     String   // "login", "logout", "register", "password_reset", "email_verify", "token_refresh", "token_revoke", "failed_login"
+  details    String?  // JSON string with additional details
+  ip         String?
+  userAgent  String?
+  success    Boolean  @default(true)
+  createdAt  DateTime @default(now())
+
+  @@index([userId])
+  @@index([action])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
