@@ -64,14 +64,17 @@ model EmailVerificationToken {
   id         String   @id @default(uuid())
   user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   userId     String
-  tokenHash  String   @unique
+  tokenHash  String?  @unique // Legacy URL-based token (optional)
+  otpCode    String?  // 6-digit OTP code (hashed)
   expiresAt  DateTime
   createdAt  DateTime @default(now())
   consumed   Boolean  @default(false)
   consumedAt DateTime?
+  attempts   Int      @default(0) // Track OTP verification attempts
 
   @@index([userId])
   @@index([tokenHash])
+  @@index([otpCode])
   @@map("email_verification_tokens")
 }
 
