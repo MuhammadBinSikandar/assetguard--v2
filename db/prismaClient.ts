@@ -13,7 +13,48 @@ declare global {
 const prismaClientSingleton = () => {
   return new PrismaClient({
     log: process.env.NODE_ENV === 'development' ? ['query', 'error', 'warn'] : ['error'],
-  });
+    datasources: {
+      db: {
+        url: process.env.DATABASE_URL,
+      },
+    },
+  }).$extends({
+    query: {
+      $allOperations: async ({ operation, model, args, query }) => {
+        // Retry logic for Neon database wake-up
+        const maxRetries = 3;
+        let lastError: Error | undefined;
+        
+        for (let attempt = 1; attempt <= maxRetries; attempt++) {
+          try {
+            return await query(args);
+          } catch (error) {
+            lastError = error as Error;
+            
+            // Only retry on connection errors
+            if (
+              error instanceof Error &&
+              (error.message.includes("Can't reach database server") ||
+               error.message.includes('Connection terminated') ||
+               error.message.includes('Connection lost'))
+            ) {
+              if (attempt < maxRetries) {
+                console.log(`Database connection attempt ${attempt} failed, retrying...`);
+                // Wait before retry (exponential backoff)
+                await new Promise(resolve => setTimeout(resolve, attempt * 1000));
+                continue;
+              }
+            }
+            
+            // Don't retry other errors
+            throw error;
+          }
+        }
+        
+        throw lastError;
+      },
+    },
+  }) as unknown as PrismaClient;
 };
 
 const prisma = globalThis.prisma ?? prismaClientSingleton();

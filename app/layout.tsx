@@ -7,6 +7,7 @@ import "./globals.css"
 import { ThemeProvider } from "@/components/theme-provider"
 import { ChatWidget } from "@/components/ai/chat-widget"
 import { ReduxProvider } from "@/store/redux/Provider"
+import { KYCPromptProvider } from "@/components/kyc/kyc-prompt-provider"
 
 export const metadata: Metadata = {
   title: "AssetGuard",
@@ -35,9 +36,11 @@ export default function RootLayout({
       <body className="font-sans bg-background text-foreground">
         <ReduxProvider>
           <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
-            <Suspense fallback={<div>Loading...</div>}>{children}</Suspense>
-            <ChatWidget />
-            <Analytics />
+            <KYCPromptProvider>
+              <Suspense fallback={<div>Loading...</div>}>{children}</Suspense>
+              <ChatWidget />
+              <Analytics />
+            </KYCPromptProvider>
           </ThemeProvider>
         </ReduxProvider>
       </body>

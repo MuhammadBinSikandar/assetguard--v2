@@ -5,7 +5,7 @@ import { cookies } from 'next/headers';
 import type { DecodedAccessToken, DecodedRefreshToken } from '@/db/drizzle/models';
 
 // Environment variables with defaults
-const JWT_ALG = (process.env.JWT_ALG || 'RS256') as jwt.Algorithm;
+const JWT_ALG = 'HS256' as const;
 const ACCESS_TOKEN_EXP = process.env.ACCESS_TOKEN_EXP || '15m';
 const REFRESH_TOKEN_EXP = process.env.REFRESH_TOKEN_EXP || '30d';
 const COOKIE_DOMAIN = process.env.COOKIE_DOMAIN || 'localhost';
@@ -255,6 +255,22 @@ export function generateEmailVerificationToken(): {
   const expiresAt = new Date(Date.now() + ms('24h')); // 24 hours
 
   return { rawToken, expiresAt };
+}
+
+/**
+ * Generate 6-digit OTP code
+ * @returns OTP object with code and expiration
+ */
+export function generateOTP(): {
+  otpCode: string;
+  expiresAt: Date;
+} {
+  // Generate a cryptographically secure 6-digit OTP using crypto.randomInt
+  const otpNumber = crypto.randomInt(0, 1_000_000);
+  const otpCode = otpNumber.toString().padStart(6, '0');
+  const expiresAt = new Date(Date.now() + ms('10m' as ms.StringValue)); // 10 minutes
+
+  return { otpCode, expiresAt };
 }
 
 /**

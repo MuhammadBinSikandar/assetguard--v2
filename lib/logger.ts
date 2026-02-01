@@ -11,7 +11,8 @@ export type AuditAction =
   | 'failed_login'
   | 'account_locked'
   | 'session_revoked'
-  | 'password_changed';
+  | 'password_changed'
+  | 'resend_otp';
 
 interface AuditLogData {
   userId?: string;

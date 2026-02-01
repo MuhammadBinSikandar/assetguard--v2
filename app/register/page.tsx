@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation"
 
 export default function RegisterIndexPage() {
-  redirect("/register/property")
+  // Redirect to new user registration page
+  redirect("/auth/register")
 }

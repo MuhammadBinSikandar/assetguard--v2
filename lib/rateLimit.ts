@@ -1,39 +1,47 @@
 /**
- * Rate Limiter using in-memory store
- * For production, consider using Redis for distributed rate limiting
+ * Simple In-Memory Rate Limiter
+ * 
+ * Uses a sliding window counter algorithm for efficient rate limiting.
+ * Suitable for single-server deployments and development.
+ * 
+ * For production with multiple servers, consider using Redis or a distributed cache.
  */
 
+// In-memory store for rate limiting
 interface RateLimitEntry {
   count: number;
   resetAt: number;
   lockedUntil?: number;
 }
 
-// In-memory store for rate limiting
-// In production, use Redis or similar distributed cache
 const rateLimitStore = new Map<string, RateLimitEntry>();
 
-const RATE_LIMIT_ENABLED = process.env.RATE_LIMIT_ENABLED === 'true';
-const MAX_REQUESTS = parseInt(process.env.RATE_LIMIT_MAX_REQUESTS || '5', 10);
-const WINDOW_MS = parseInt(process.env.RATE_LIMIT_WINDOW_MS || '900000', 10); // 15 minutes
-const LOCKOUT_DURATION = parseInt(
-  process.env.RATE_LIMIT_LOCKOUT_DURATION || '3600000',
-  10
-); // 1 hour
+// Configuration
+const RATE_LIMIT_ENABLED = process.env.RATE_LIMIT_ENABLED !== 'false'; // Enabled by default
 
 /**
  * Rate limit configuration for different endpoints
  */
 export const RATE_LIMIT_CONFIGS = {
   login: {
-    maxRequests: MAX_REQUESTS,
-    windowMs: WINDOW_MS,
-    lockoutDuration: LOCKOUT_DURATION,
+    maxRequests: 5,
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    lockoutDuration: 60 * 60 * 1000, // 1 hour lockout after exceeding
   },
   register: {
-    maxRequests: 3,
+    maxRequests: 5,
     windowMs: 60 * 60 * 1000, // 1 hour
-    lockoutDuration: 0, // No lockout for registration
+    lockoutDuration: 0,
+  },
+  verifyOtp: {
+    maxRequests: 10,
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    lockoutDuration: 30 * 60 * 1000, // 30 minutes lockout
+  },
+  resend_otp: {
+    maxRequests: 3,
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    lockoutDuration: 30 * 60 * 1000, // 30 minutes lockout
   },
   forgotPassword: {
     maxRequests: 3,
@@ -60,28 +68,34 @@ export const RATE_LIMIT_CONFIGS = {
 export type RateLimitType = keyof typeof RATE_LIMIT_CONFIGS;
 
 /**
- * Get IP address from request
- * @param request - Request object
- * @returns IP address
+ * Get client IP from request headers
  */
 function getClientIP(request: Request): string {
+  // Cloudflare
+  const cfConnectingIp = request.headers.get('cf-connecting-ip');
+  if (cfConnectingIp) return cfConnectingIp;
+
+  // Standard proxy headers
   const forwardedFor = request.headers.get('x-forwarded-for');
+  if (forwardedFor) {
+    return forwardedFor.split(',')[0].trim();
+  }
+
   const realIp = request.headers.get('x-real-ip');
-  return forwardedFor?.split(',')[0] || realIp || 'unknown';
+  if (realIp) return realIp;
+
+  return 'unknown';
 }
 
 /**
  * Generate rate limit key
- * @param identifier - IP or user ID
- * @param type - Type of rate limit
- * @returns Rate limit key
  */
 function getRateLimitKey(identifier: string, type: RateLimitType): string {
   return `${type}:${identifier}`;
 }
 
 /**
- * Clean up expired entries
+ * Clean up expired entries periodically
  */
 function cleanupExpiredEntries(): void {
   const now = Date.now();
@@ -99,10 +113,6 @@ if (typeof setInterval !== 'undefined') {
 
 /**
  * Check rate limit for a request
- * @param request - Request object
- * @param type - Type of rate limit
- * @param identifier - Optional custom identifier (defaults to IP)
- * @returns Rate limit result
  */
 export async function checkRateLimit(
   request: Request,
@@ -118,7 +128,7 @@ export async function checkRateLimit(
     return {
       success: true,
       remaining: 999,
-      resetAt: Date.now() + WINDOW_MS,
+      resetAt: Date.now() + 60000,
     };
   }
 
@@ -147,6 +157,7 @@ export async function checkRateLimit(
     };
   }
 
+  // Increment counter
   entry.count += 1;
 
   // Check if limit exceeded
@@ -175,37 +186,32 @@ export async function checkRateLimit(
 
 /**
  * Reset rate limit for an identifier
- * Useful for clearing after successful login
- * @param identifier - IP or user ID
- * @param type - Type of rate limit
  */
-export function resetRateLimit(
+export async function resetRateLimit(
   identifier: string,
   type: RateLimitType = 'default'
-): void {
+): Promise<void> {
   const key = getRateLimitKey(identifier, type);
   rateLimitStore.delete(key);
 }
 
 /**
  * Get rate limit info without incrementing
- * @param identifier - IP or user ID
- * @param type - Type of rate limit
- * @returns Rate limit info
  */
-export function getRateLimitInfo(
+export async function getRateLimitInfo(
   identifier: string,
   type: RateLimitType = 'default'
-): {
+): Promise<{
   count: number;
   remaining: number;
   resetAt: number;
   lockedUntil?: number;
-} {
+}> {
   const config = RATE_LIMIT_CONFIGS[type] || RATE_LIMIT_CONFIGS.default;
   const key = getRateLimitKey(identifier, type);
-  const entry = rateLimitStore.get(key);
   const now = Date.now();
+
+  const entry = rateLimitStore.get(key);
 
   if (!entry || entry.resetAt < now) {
     return {

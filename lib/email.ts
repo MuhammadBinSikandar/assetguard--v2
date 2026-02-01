@@ -1,6 +1,7 @@
 import nodemailer from 'nodemailer';
 import fs from 'fs/promises';
 import path from 'path';
+import os from 'os';
 
 const EMAIL_PROVIDER = process.env.EMAIL_PROVIDER || 'mock';
 const EMAIL_FROM = process.env.EMAIL_FROM || 'noreply@assetguard.com';
@@ -16,19 +17,25 @@ export interface EmailOptions {
 
 /**
  * Mock email provider for development
- * Logs emails to console and writes to /tmp/mock-emails
+ * Logs emails to console and writes to temp directory
  */
 class MockEmailProvider {
   async send(options: EmailOptions): Promise<void> {
     console.log('📧 [MOCK EMAIL]');
     console.log('To:', options.to);
     console.log('Subject:', options.subject);
-    console.log('Body:', options.text || options.html);
     console.log('---');
 
-    // Write to file for easy review
+    // Write to file for easy review (non-blocking, don't wait)
+    this.writeToFile(options).catch((error) => {
+      console.error('Failed to write mock email to file:', error);
+    });
+  }
+
+  private async writeToFile(options: EmailOptions): Promise<void> {
     try {
-      const mockEmailDir = '/tmp/mock-emails';
+      // Use OS temp directory for cross-platform compatibility
+      const mockEmailDir = path.join(os.tmpdir(), 'assetguard-mock-emails');
       await fs.mkdir(mockEmailDir, { recursive: true });
 
       const filename = `${Date.now()}-${options.to.replace(/[^a-z0-9]/gi, '_')}.txt`;
@@ -43,7 +50,7 @@ ${options.text || options.html}
 `;
 
       await fs.writeFile(filepath, content);
-      console.log(`Email written to: ${filepath}`);
+      console.log(`📧 Email written to: ${filepath}`);
     } catch (error) {
       console.error('Failed to write mock email to file:', error);
     }
@@ -159,12 +166,12 @@ class NodemailerEmailProvider {
 
   constructor() {
     this.transporter = nodemailer.createTransport({
-      host: process.env.SMTP_HOST || 'smtp.gmail.com',
-      port: parseInt(process.env.SMTP_PORT || '587', 10),
-      secure: process.env.SMTP_SECURE === 'true',
+      host: process.env.EMAIL_HOST || process.env.SMTP_HOST || 'smtp.gmail.com',
+      port: parseInt(process.env.EMAIL_PORT || process.env.SMTP_PORT || '587', 10),
+      secure: process.env.EMAIL_SECURE === 'true' || process.env.SMTP_SECURE === 'true',
       auth: {
-        user: process.env.SMTP_USER || '',
-        pass: process.env.SMTP_PASS || '',
+        user: process.env.EMAIL_USER || process.env.SMTP_USER || '',
+        pass: process.env.EMAIL_PASSWORD || process.env.SMTP_PASS || '',
       },
     });
   }
@@ -213,7 +220,69 @@ export async function sendEmail(options: EmailOptions): Promise<void> {
 }
 
 /**
- * Send email verification email
+ * Send email verification OTP
+ * @param to - Recipient email
+ * @param otpCode - 6-digit OTP code
+ */
+export async function sendVerificationOTP(
+  to: string,
+  otpCode: string
+): Promise<void> {
+  const html = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Verify Your Email</title>
+</head>
+<body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
+  <div style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 30px; text-align: center; border-radius: 10px 10px 0 0;">
+    <h1 style="color: white; margin: 0;">AssetGuard</h1>
+  </div>
+  <div style="background: #f9f9f9; padding: 30px; border-radius: 0 0 10px 10px;">
+    <h2 style="color: #333; margin-top: 0;">Verify Your Email Address</h2>
+    <p>Thank you for registering with AssetGuard! Please use the verification code below to complete your registration:</p>
+    <div style="text-align: center; margin: 30px 0;">
+      <div style="background: white; border: 2px dashed #667eea; border-radius: 8px; padding: 20px; display: inline-block;">
+        <div style="font-size: 32px; font-weight: bold; color: #667eea; letter-spacing: 8px; font-family: 'Courier New', monospace;">
+          ${otpCode}
+        </div>
+      </div>
+    </div>
+    <p style="text-align: center; color: #666; font-size: 14px;">
+      Enter this code in the verification page to activate your account.
+    </p>
+    <p style="color: #666; font-size: 14px; margin-top: 30px;">
+      This code will expire in 10 minutes. If you didn't create an account with AssetGuard, please ignore this email.
+    </p>
+  </div>
+</body>
+</html>
+`;
+
+  const text = `
+Verify Your Email Address
+
+Thank you for registering with AssetGuard!
+
+Your verification code is: ${otpCode}
+
+Enter this code in the verification page to activate your account.
+
+This code will expire in 10 minutes. If you didn't create an account with AssetGuard, please ignore this email.
+`;
+
+  await sendEmail({
+    to,
+    subject: 'Verify Your Email - AssetGuard',
+    html,
+    text,
+  });
+}
+
+/**
+ * Send email verification email (legacy URL-based)
  * @param to - Recipient email
  * @param verificationToken - Verification token
  */

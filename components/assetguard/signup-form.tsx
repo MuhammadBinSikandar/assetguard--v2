@@ -13,7 +13,6 @@ import { Checkbox } from "@/components/ui/checkbox"
 import { Separator } from "@/components/ui/separator"
 import { Chrome, Check, X, Wallet, Eye, EyeOff, AlertCircle } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { useAuth } from "@/hooks/useAuth"
 
 function emailIsValid(v: string) {
   return /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v)
@@ -32,7 +31,6 @@ function getPasswordStrength(pw: string): Strength {
 
 export function SignupForm() {
   const router = useRouter()
-  const { register } = useAuth()
 
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
@@ -56,21 +54,28 @@ export function SignupForm() {
     setLoading(true)
 
     try {
-      await register({
-        email: email.toLowerCase().trim(),
-        password,
-        name: name.trim() || undefined,
+      const response = await fetch('/api/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: email.toLowerCase().trim(),
+          password,
+          name: name.trim() || undefined,
+        }),
       })
+
+      const data = await response.json()
+
+      if (!response.ok || !data.success) {
+        throw new Error(data.message || 'Registration failed')
+      }
 
       setSuccess(true)
 
-      // Redirect to verify-email page after 2 seconds
-      setTimeout(() => {
-        router.push('/verify-email?message=Please check your email to verify your account')
-      }, 2000)
+      // Redirect to OTP verification page immediately
+      router.push('/auth/verify-otp')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Registration failed. Please try again.')
-    } finally {
       setLoading(false)
     }
   }

@@ -3,7 +3,7 @@
 import * as React from "react"
 import Link from "next/link"
 import { useRouter, useSearchParams } from "next/navigation"
-import { Eye, EyeOff, AlertCircle } from "lucide-react"
+import { Eye, EyeOff, AlertCircle, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -30,7 +30,7 @@ export function LoginForm() {
 
     try {
       await login({
-        email: email.toLowerCase().trim(),
+        email,
         password,
         rememberMe,
       })
@@ -124,13 +124,20 @@ export function LoginForm() {
 
       {/* Submit */}
       <Button type="submit" className="w-full" disabled={loading}>
-        {loading ? "Logging in..." : "Log In"}
+        {loading ? (
+          <>
+            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            Logging in...
+          </>
+        ) : (
+          "Log In"
+        )}
       </Button>
 
       {/* Divider */}
       <div className="text-center text-sm text-slate-300">
         {"Don't have an account? "}
-        <Link href="/register" className="text-primary underline-offset-4 hover:underline">
+        <Link href="/auth/register" className="text-primary underline-offset-4 hover:underline">
           Sign up
         </Link>
       </div>

@@ -13,6 +13,7 @@ const PROTECTED_ROUTES: Record<string, { roles?: string[]; requireEmailVerified?
 const PUBLIC_ROUTES = [
   '/',
   '/login',
+  '/signup',
   '/register',
   '/auth/register',
   '/auth/verify-otp',
@@ -35,6 +36,7 @@ const EXCLUDED_API_ROUTES = [
   '/api/auth/resend-otp',
   '/api/auth/forgot-password',
   '/api/auth/reset-password',
+  '/api/auth/get-pending-email',
 ];
 
 /**

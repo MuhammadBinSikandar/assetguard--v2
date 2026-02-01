@@ -37,6 +37,7 @@ export async function GET(request: NextRequest) {
 
     let matchedToken = null;
     for (const dbToken of allTokens) {
+      if (!dbToken.tokenHash) continue;
       const isMatch = await compareToken(token, dbToken.tokenHash);
       if (isMatch) {
         matchedToken = dbToken;
