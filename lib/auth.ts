@@ -6,8 +6,9 @@ import type { DecodedAccessToken, DecodedRefreshToken } from '@/db/drizzle/model
 
 // Environment variables with defaults
 const JWT_ALG = 'HS256' as const;
-const ACCESS_TOKEN_EXP = process.env.ACCESS_TOKEN_EXP || '15m';
+const ACCESS_TOKEN_EXP = process.env.ACCESS_TOKEN_EXP || '1h';
 const REFRESH_TOKEN_EXP = process.env.REFRESH_TOKEN_EXP || '30d';
+const REFRESH_TOKEN_EXP_REMEMBER = process.env.REFRESH_TOKEN_EXP_REMEMBER || '30d';
 const COOKIE_DOMAIN = process.env.COOKIE_DOMAIN || 'localhost';
 const COOKIE_SECURE = process.env.COOKIE_SECURE === 'true' || process.env.NODE_ENV === 'production';
 const COOKIE_SAME_SITE = (process.env.COOKIE_SAME_SITE || 'strict') as 'strict' | 'lax' | 'none';
@@ -85,15 +86,16 @@ export function createAccessToken(payload: {
  * Create a refresh token (long-lived)
  * Returns both the raw token (for cookie) and JTI (for DB tracking)
  * @param userId - User ID
+ * @param rememberMe - If true, use extended expiration
  * @returns Token data
  */
-export function createRefreshToken(userId: string): {
+export function createRefreshToken(userId: string, rememberMe: boolean = false): {
   token: string;
   jti: string;
   expiresAt: Date;
 } {
   const jti = generateJTI();
-  const expiresIn = REFRESH_TOKEN_EXP;
+  const expiresIn = rememberMe ? REFRESH_TOKEN_EXP_REMEMBER : REFRESH_TOKEN_EXP;
 
   const token = jwt.sign(
     {

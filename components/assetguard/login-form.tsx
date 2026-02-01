@@ -8,12 +8,10 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Checkbox } from "@/components/ui/checkbox"
-import { useAuth } from "@/hooks/useAuth"
 
 export function LoginForm() {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const { login } = useAuth()
 
   const [email, setEmail] = React.useState("")
   const [password, setPassword] = React.useState("")
@@ -29,18 +27,30 @@ export function LoginForm() {
     setLoading(true)
 
     try {
-      await login({
-        email,
-        password,
-        rememberMe,
+      const response = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: email.toLowerCase().trim(),
+          password,
+          rememberMe,
+        }),
+        credentials: 'include',
       })
 
-      // Redirect to next page or dashboard
+      const result = await response.json()
+
+      if (!result.success) {
+        setError(result.message || 'Login failed. Please try again.')
+        setLoading(false)
+        return
+      }
+
+      // Redirect immediately on success
       const next = searchParams.get('next')
-      router.push(next || '/dashboard')
+      window.location.href = next || '/dashboard'
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Login failed. Please try again.')
-    } finally {
       setLoading(false)
     }
   }

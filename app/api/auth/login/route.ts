@@ -4,17 +4,17 @@ import { comparePassword } from '@/lib/bcrypt';
 import {
   createAccessToken,
   createRefreshToken,
-  setAccessTokenCookie,
-  setRefreshTokenCookie,
   isAccountLocked,
   calculateLockoutDuration,
   getDeviceInfo,
+  COOKIE_OPTIONS,
+  ACCESS_COOKIE_NAME,
+  REFRESH_COOKIE_NAME,
 } from '@/lib/auth';
 import { hashToken } from '@/lib/bcrypt';
 import { checkRateLimit, resetRateLimit } from '@/lib/rateLimit';
 import { createAuditLog, securityLog } from '@/lib/logger';
-import { initializeCSRF } from '@/lib/csrf';
-import ms from 'ms';
+import { generateCSRFToken } from '@/lib/csrf';
 
 const MAX_FAILED_ATTEMPTS = 5;
 
@@ -171,8 +171,8 @@ export async function POST(request: NextRequest) {
       roles: user.roles,
     });
 
-    // Create refresh token
-    const refreshTokenData = createRefreshToken(user.id);
+    // Create refresh token with rememberMe option
+    const refreshTokenData = createRefreshToken(user.id, rememberMe || false);
     const hashedRefreshToken = await hashToken(refreshTokenData.token);
 
     // Store refresh token in database
@@ -188,42 +188,41 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    // Set cookies
-    await setAccessTokenCookie(accessToken, accessExpiry);
-    await setRefreshTokenCookie(refreshTokenData.token, refreshTokenData.expiresAt);
+    // Generate CSRF token
+    const csrfToken = generateCSRFToken();
 
-    // Initialize CSRF token
-    const csrfToken = await initializeCSRF();
-
-    // Reset rate limit for this IP
+    // Reset rate limit for this IP (non-blocking)
     resetRateLimit(deviceInfo.ip || 'unknown', 'login');
 
-    // Audit log
-    await createAuditLog({
-      userId: user.id,
-      action: 'login',
-      details: {
-        device: deviceInfo.device,
-        refreshTokenId: refreshTokenRecord.id,
-      },
-      ip: deviceInfo.ip || undefined,
-      userAgent: deviceInfo.userAgent || undefined,
-      success: true,
-    });
-
-    // Clean up old expired sessions for this user
-    await prisma.refreshToken.deleteMany({
-      where: {
+    // Run non-critical operations in background (fire-and-forget)
+    // This includes audit logging and session cleanup
+    Promise.all([
+      // Audit log
+      createAuditLog({
         userId: user.id,
-        expiresAt: {
-          lt: new Date(),
+        action: 'login',
+        details: {
+          device: deviceInfo.device,
+          refreshTokenId: refreshTokenRecord.id,
         },
-      },
-    });
+        ip: deviceInfo.ip || undefined,
+        userAgent: deviceInfo.userAgent || undefined,
+        success: true,
+      }),
+      // Clean up old expired sessions for this user
+      prisma.refreshToken.deleteMany({
+        where: {
+          userId: user.id,
+          expiresAt: {
+            lt: new Date(),
+          },
+        },
+      }),
+    ]).catch(err => console.error('Background login tasks failed:', err));
 
-    // Enforce max sessions per user
+    // Enforce max sessions per user (also in background)
     const maxSessions = parseInt(process.env.MAX_SESSIONS_PER_USER || '5', 10);
-    const userSessions = await prisma.refreshToken.count({
+    prisma.refreshToken.count({
       where: {
         userId: user.id,
         revoked: false,
@@ -231,36 +230,36 @@ export async function POST(request: NextRequest) {
           gt: new Date(),
         },
       },
-    });
-
-    if (userSessions > maxSessions) {
-      // Revoke oldest sessions
-      const sessionsToRevoke = await prisma.refreshToken.findMany({
-        where: {
-          userId: user.id,
-          revoked: false,
-        },
-        orderBy: {
-          createdAt: 'asc',
-        },
-        take: userSessions - maxSessions,
-      });
-
-      await prisma.refreshToken.updateMany({
-        where: {
-          id: {
-            in: sessionsToRevoke.map((s: { id: string }) => s.id),
+    }).then(async (userSessions) => {
+      if (userSessions > maxSessions) {
+        const sessionsToRevoke = await prisma.refreshToken.findMany({
+          where: {
+            userId: user.id,
+            revoked: false,
           },
-        },
-        data: {
-          revoked: true,
-          revokedAt: new Date(),
-          revokedReason: 'max_sessions_exceeded',
-        },
-      });
-    }
+          orderBy: {
+            createdAt: 'asc',
+          },
+          take: userSessions - maxSessions,
+        });
 
-    return NextResponse.json(
+        await prisma.refreshToken.updateMany({
+          where: {
+            id: {
+              in: sessionsToRevoke.map((s: { id: string }) => s.id),
+            },
+          },
+          data: {
+            revoked: true,
+            revokedAt: new Date(),
+            revokedReason: 'max_sessions_exceeded',
+          },
+        });
+      }
+    }).catch(err => console.error('Session cleanup failed:', err));
+
+    // Create response with cookies
+    const response = NextResponse.json(
       {
         success: true,
         message: 'Login successful',
@@ -278,6 +277,27 @@ export async function POST(request: NextRequest) {
       },
       { status: 200 }
     );
+
+    // Set cookies on response
+    response.cookies.set(ACCESS_COOKIE_NAME, accessToken, {
+      ...COOKIE_OPTIONS,
+      expires: accessExpiry,
+    });
+
+    response.cookies.set(REFRESH_COOKIE_NAME, refreshTokenData.token, {
+      ...COOKIE_OPTIONS,
+      expires: refreshTokenData.expiresAt,
+    });
+
+    response.cookies.set('csrf_token', csrfToken, {
+      httpOnly: false, // Client needs to read this
+      secure: COOKIE_OPTIONS.secure,
+      sameSite: COOKIE_OPTIONS.sameSite,
+      path: '/',
+      maxAge: 60 * 60 * 24, // 24 hours
+    });
+
+    return response;
   } catch (error) {
     console.error('Login error:', error);
 

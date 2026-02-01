@@ -1,21 +1,28 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/db/prismaClient';
 import {
-  getRefreshTokenFromCookies,
   verifyRefreshToken,
-  clearAuthCookies,
   getDeviceInfo,
+  ACCESS_COOKIE_NAME,
+  REFRESH_COOKIE_NAME,
 } from '@/lib/auth';
 import { compareToken } from '@/lib/bcrypt';
 import { createAuditLog } from '@/lib/logger';
-import { clearCSRFToken } from '@/lib/csrf';
+
+// Helper to clear auth cookies on a response
+function clearCookiesOnResponse(response: NextResponse) {
+  response.cookies.delete(ACCESS_COOKIE_NAME);
+  response.cookies.delete(REFRESH_COOKIE_NAME);
+  response.cookies.delete('csrf_token');
+  return response;
+}
 
 export async function POST(request: NextRequest) {
   const deviceInfo = getDeviceInfo(request);
 
   try {
     // Get refresh token from cookie
-    const refreshToken = await getRefreshTokenFromCookies();
+    const refreshToken = request.cookies.get(REFRESH_COOKIE_NAME)?.value;
 
     if (refreshToken) {
       // Verify and decode token
@@ -60,30 +67,28 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Clear cookies regardless of token validity
-    await clearAuthCookies();
-    await clearCSRFToken();
-
-    return NextResponse.json(
+    // Create response and clear cookies
+    const response = NextResponse.json(
       {
         success: true,
         message: 'Logged out successfully',
       },
       { status: 200 }
     );
+    
+    return clearCookiesOnResponse(response);
   } catch (error) {
     console.error('Logout error:', error);
 
     // Still clear cookies even if there's an error
-    await clearAuthCookies();
-    await clearCSRFToken();
-
-    return NextResponse.json(
+    const errorResponse = NextResponse.json(
       {
         success: true,
         message: 'Logged out successfully',
       },
       { status: 200 }
     );
+    
+    return clearCookiesOnResponse(errorResponse);
   }
 }
