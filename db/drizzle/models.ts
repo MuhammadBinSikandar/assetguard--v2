@@ -90,6 +90,7 @@ export interface DecodedAccessToken {
   userId: string;
   email: string;
   roles: string[];
+  emailVerified?: boolean;
   iat: number;
   exp: number;
   jti: string;

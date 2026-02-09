@@ -34,27 +34,13 @@ export function useAuth() {
   const loading = useAppSelector((state) => state.user.loading);
 
   // Zustand session state
-  const { setSession, clearSession, setCSRFToken, shouldRefreshToken, setRefreshing } =
+  const { setSession, clearSession, setCSRFToken, shouldRefreshToken, setRefreshing, hasSession } =
     useSessionStore();
 
   // Refresh timer ref
   const refreshTimerRef = useRef<NodeJS.Timeout | null>(null);
-
-  /**
-   * Set up auto-refresh timer
-   */
-  const setupAutoRefresh = useCallback(() => {
-    if (refreshTimerRef.current) {
-      clearInterval(refreshTimerRef.current);
-    }
-
-    // Check every minute if token needs refresh
-    refreshTimerRef.current = setInterval(() => {
-      if (shouldRefreshToken()) {
-        refreshSession();
-      }
-    }, 60 * 1000); // Check every minute
-  }, [shouldRefreshToken]);
+  // Track if component is mounted to prevent state updates after unmount
+  const isMountedRef = useRef(true);
 
   /**
    * Clean up auto-refresh timer
@@ -70,18 +56,86 @@ export function useAuth() {
    * Initialize auth on mount
    */
   useEffect(() => {
+    isMountedRef.current = true;
+    
     // Fetch user profile if not already loaded
     if (!user && !loading) {
       dispatch(fetchUserProfile());
     }
 
-    // Set up auto-refresh
-    setupAutoRefresh();
+    return () => {
+      isMountedRef.current = false;
+      cleanupAutoRefresh();
+    };
+  }, [user, loading, dispatch, cleanupAutoRefresh]);
+
+  /**
+   * Set up auto-refresh timer when session exists
+   */
+  useEffect(() => {
+    if (!hasSession) {
+      cleanupAutoRefresh();
+      return;
+    }
+
+    // Check every minute if token needs refresh
+    refreshTimerRef.current = setInterval(async () => {
+      if (shouldRefreshToken() && isMountedRef.current) {
+        try {
+          await performRefresh();
+        } catch (error) {
+          console.error('Auto-refresh failed:', error);
+        }
+      }
+    }, 60 * 1000);
 
     return () => {
       cleanupAutoRefresh();
     };
-  }, [user, loading, dispatch, setupAutoRefresh, cleanupAutoRefresh]);
+  }, [hasSession, shouldRefreshToken, cleanupAutoRefresh]);
+
+  /**
+   * Internal refresh function to avoid circular dependency
+   */
+  const performRefresh = async (): Promise<boolean> => {
+    try {
+      setRefreshing(true);
+
+      const response = await fetch('/api/auth/refresh', {
+        method: 'POST',
+        credentials: 'include',
+      });
+
+      const result = await response.json();
+
+      if (!result.success) {
+        dispatch(clearUser());
+        clearSession();
+        return false;
+      }
+
+      dispatch(setUser(result.data.user));
+      const expiryTime = new Date(result.data.accessTokenExpiresAt).getTime();
+      setSession(true, expiryTime);
+
+      return true;
+    } catch (error) {
+      console.error('Refresh error:', error);
+      dispatch(clearUser());
+      clearSession();
+      return false;
+    } finally {
+      setRefreshing(false);
+    }
+  };
+
+  /**
+   * Set up auto-refresh - now simplified
+   */
+  const setupAutoRefresh = useCallback(() => {
+    // Auto-refresh is now handled by the useEffect above
+    // This function is kept for compatibility with login flow
+  }, []);
 
   /**
    * Register new user
@@ -92,7 +146,10 @@ export function useAuth() {
         const response = await fetch('/api/auth/register', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(data),
+          body: JSON.stringify({
+            ...data,
+            email: data.email.toLowerCase().trim(),
+          }),
           credentials: 'include',
         });
 
@@ -119,7 +176,10 @@ export function useAuth() {
         const response = await fetch('/api/auth/login', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(credentials),
+          body: JSON.stringify({
+            ...credentials,
+            email: credentials.email.toLowerCase().trim(),
+          }),
           credentials: 'include',
         });
 
@@ -231,7 +291,7 @@ export function useAuth() {
     const response = await fetch('/api/auth/forgot-password', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email }),
+      body: JSON.stringify({ email: email.toLowerCase().trim() }),
     });
 
     const result = await response.json();

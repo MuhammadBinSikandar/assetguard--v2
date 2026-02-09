@@ -1,19 +1,26 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/db/prismaClient';
 import {
-  getRefreshTokenFromCookies,
   verifyRefreshToken,
   createAccessToken,
   createRefreshToken,
-  setAccessTokenCookie,
-  setRefreshTokenCookie,
-  clearAuthCookies,
   getDeviceInfo,
+  COOKIE_OPTIONS,
+  ACCESS_COOKIE_NAME,
+  REFRESH_COOKIE_NAME,
 } from '@/lib/auth';
 import { hashToken, compareToken } from '@/lib/bcrypt';
 import { createAuditLog, securityLog } from '@/lib/logger';
 import { checkRateLimit } from '@/lib/rateLimit';
 import { sendSecurityAlertEmail } from '@/lib/email';
+
+// Helper to clear auth cookies on a response
+function clearCookiesOnResponse(response: NextResponse) {
+  response.cookies.delete(ACCESS_COOKIE_NAME);
+  response.cookies.delete(REFRESH_COOKIE_NAME);
+  response.cookies.delete('csrf_token');
+  return response;
+}
 
 export async function POST(request: NextRequest) {
   const deviceInfo = getDeviceInfo(request);
@@ -32,7 +39,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Get refresh token from cookie
-    const refreshToken = await getRefreshTokenFromCookies();
+    const refreshToken = request.cookies.get(REFRESH_COOKIE_NAME)?.value;
 
     if (!refreshToken) {
       return NextResponse.json(
@@ -48,14 +55,14 @@ export async function POST(request: NextRequest) {
     const decoded = verifyRefreshToken(refreshToken);
 
     if (!decoded) {
-      await clearAuthCookies();
-      return NextResponse.json(
+      const response = NextResponse.json(
         {
           success: false,
           message: 'Invalid or expired refresh token',
         },
         { status: 401 }
       );
+      return clearCookiesOnResponse(response);
     }
 
     // Find all refresh tokens for this user (to check for reuse)
@@ -121,9 +128,6 @@ export async function POST(request: NextRequest) {
           },
         });
 
-        // Clear cookies
-        await clearAuthCookies();
-
         // Audit log
         await createAuditLog({
           userId: decoded.userId,
@@ -154,7 +158,7 @@ export async function POST(request: NextRequest) {
           console.error('Failed to send security alert email:', emailError);
         }
 
-        return NextResponse.json(
+        const reuseResponse = NextResponse.json(
           {
             success: false,
             message: 'Security alert: Token reuse detected. All sessions have been revoked. Please log in again.',
@@ -162,22 +166,22 @@ export async function POST(request: NextRequest) {
           },
           { status: 401 }
         );
+        return clearCookiesOnResponse(reuseResponse);
       }
 
       // Token not found and no reuse detected - just invalid
-      await clearAuthCookies();
-      return NextResponse.json(
+      const invalidResponse = NextResponse.json(
         {
           success: false,
           message: 'Invalid refresh token',
         },
         { status: 401 }
       );
+      return clearCookiesOnResponse(invalidResponse);
     }
 
     // Check if token is revoked
     if (matchedToken.revoked) {
-      await clearAuthCookies();
       await createAuditLog({
         userId: decoded.userId,
         action: 'token_refresh',
@@ -187,25 +191,26 @@ export async function POST(request: NextRequest) {
         success: false,
       });
 
-      return NextResponse.json(
+      const revokedResponse = NextResponse.json(
         {
           success: false,
           message: 'Refresh token has been revoked',
         },
         { status: 401 }
       );
+      return clearCookiesOnResponse(revokedResponse);
     }
 
     // Check if token is expired
     if (matchedToken.expiresAt < new Date()) {
-      await clearAuthCookies();
-      return NextResponse.json(
+      const expiredResponse = NextResponse.json(
         {
           success: false,
           message: 'Refresh token has expired',
         },
         { status: 401 }
       );
+      return clearCookiesOnResponse(expiredResponse);
     }
 
     // Get user data
@@ -214,14 +219,14 @@ export async function POST(request: NextRequest) {
     });
 
     if (!user) {
-      await clearAuthCookies();
-      return NextResponse.json(
+      const noUserResponse = NextResponse.json(
         {
           success: false,
           message: 'User not found',
         },
         { status: 401 }
       );
+      return clearCookiesOnResponse(noUserResponse);
     }
 
     // TOKEN ROTATION: Create new tokens
@@ -231,7 +236,9 @@ export async function POST(request: NextRequest) {
       roles: user.roles,
     });
 
-    const newRefreshTokenData = createRefreshToken(user.id);
+    // Maintain the same expiration duration for refresh token (check if it was long-lived)
+    const wasLongLived = matchedToken.expiresAt.getTime() - matchedToken.createdAt.getTime() > 7 * 24 * 60 * 60 * 1000;
+    const newRefreshTokenData = createRefreshToken(user.id, wasLongLived);
     const hashedNewRefreshToken = await hashToken(newRefreshTokenData.token);
 
     // Create new refresh token record
@@ -258,24 +265,8 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    // Set new cookies
-    await setAccessTokenCookie(newAccessToken, accessExpiry);
-    await setRefreshTokenCookie(newRefreshTokenData.token, newRefreshTokenData.expiresAt);
-
-    // Audit log
-    await createAuditLog({
-      userId: user.id,
-      action: 'token_refresh',
-      details: {
-        oldTokenId: matchedToken.id,
-        newTokenId: newRefreshTokenRecord.id,
-      },
-      ip: deviceInfo.ip || undefined,
-      userAgent: deviceInfo.userAgent || undefined,
-      success: true,
-    });
-
-    return NextResponse.json(
+    // Create response with new cookies
+    const response = NextResponse.json(
       {
         success: true,
         message: 'Token refreshed successfully',
@@ -292,6 +283,32 @@ export async function POST(request: NextRequest) {
       },
       { status: 200 }
     );
+
+    // Set new cookies on response
+    response.cookies.set(ACCESS_COOKIE_NAME, newAccessToken, {
+      ...COOKIE_OPTIONS,
+      expires: accessExpiry,
+    });
+    
+    response.cookies.set(REFRESH_COOKIE_NAME, newRefreshTokenData.token, {
+      ...COOKIE_OPTIONS,
+      expires: newRefreshTokenData.expiresAt,
+    });
+
+    // Audit log
+    await createAuditLog({
+      userId: user.id,
+      action: 'token_refresh',
+      details: {
+        oldTokenId: matchedToken.id,
+        newTokenId: newRefreshTokenRecord.id,
+      },
+      ip: deviceInfo.ip || undefined,
+      userAgent: deviceInfo.userAgent || undefined,
+      success: true,
+    });
+
+    return response;
   } catch (error) {
     console.error('Refresh token error:', error);
 

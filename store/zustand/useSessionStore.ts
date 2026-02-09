@@ -92,6 +92,7 @@ export const useSessionStore = create<SessionState>()(
       // Only persist minimal, safe data
       partialize: (state) => ({
         hasSession: state.hasSession,
+        accessTokenExpiry: state.accessTokenExpiry,
         redirectAfterLogin: state.redirectAfterLogin,
       }),
     }

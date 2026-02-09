@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import { verifyAccessToken } from './lib/auth';
+import { verifyAccessTokenEdge } from './lib/auth-edge';
 
 // Define protected routes and their required roles
 const PROTECTED_ROUTES: Record<string, { roles?: string[]; requireEmailVerified?: boolean }> = {
@@ -13,7 +13,10 @@ const PROTECTED_ROUTES: Record<string, { roles?: string[]; requireEmailVerified?
 const PUBLIC_ROUTES = [
   '/',
   '/login',
+  '/signup',
   '/register',
+  '/auth/register',
+  '/auth/verify-otp',
   '/forgot-password',
   '/reset-password',
   '/verify-email',
@@ -29,8 +32,11 @@ const EXCLUDED_API_ROUTES = [
   '/api/auth/refresh',
   '/api/auth/logout',
   '/api/auth/verify-email',
+  '/api/auth/verify-otp',
+  '/api/auth/resend-otp',
   '/api/auth/forgot-password',
   '/api/auth/reset-password',
+  '/api/auth/get-pending-email',
 ];
 
 /**
@@ -74,7 +80,7 @@ export async function middleware(request: NextRequest) {
   // Verify access token
   let user = null;
   if (accessToken) {
-    user = verifyAccessToken(accessToken);
+    user = await verifyAccessTokenEdge(accessToken);
   }
 
   // Find matching protected route

@@ -4,13 +4,14 @@ import type React from "react"
 
 import { useMemo, useState } from "react"
 import Link from "next/link"
+import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Separator } from "@/components/ui/separator"
-import { Chrome, Check, X, Wallet, Eye, EyeOff } from "lucide-react"
+import { Chrome, Check, X, Wallet, Eye, EyeOff, AlertCircle } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 function emailIsValid(v: string) {
@@ -29,20 +30,54 @@ function getPasswordStrength(pw: string): Strength {
 }
 
 export function SignupForm() {
+  const router = useRouter()
+
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [confirm, setConfirm] = useState("")
+  const [name, setName] = useState("")
   const [tos, setTos] = useState(false)
   const [showPw, setShowPw] = useState(false)
   const [showConfirmPw, setShowConfirmPw] = useState(false)
+
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState("")
+  const [success, setSuccess] = useState(false)
 
   const strength = useMemo(() => getPasswordStrength(password), [password])
   const emailValid = useMemo(() => emailIsValid(email), [email])
   const match = useMemo(() => confirm.length > 0 && confirm === password, [confirm, password])
 
-  function onSubmit(e: React.FormEvent) {
+  async function onSubmit(e: React.FormEvent) {
     e.preventDefault()
-    // Hook up to your auth flow or server action here.
+    setError("")
+    setLoading(true)
+
+    try {
+      const response = await fetch('/api/auth/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: email.toLowerCase().trim(),
+          password,
+          name: name.trim() || undefined,
+        }),
+      })
+
+      const data = await response.json()
+
+      if (!response.ok || !data.success) {
+        throw new Error(data.message || 'Registration failed')
+      }
+
+      setSuccess(true)
+
+      // Redirect to OTP verification page immediately
+      router.push('/auth/verify-otp')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Registration failed. Please try again.')
+      setLoading(false)
+    }
   }
 
   return (
@@ -57,6 +92,51 @@ export function SignupForm() {
       </CardHeader>
       <CardContent>
         <form onSubmit={onSubmit} className="space-y-4 text-white">
+          {/* Success Message */}
+          {success && (
+            <div className="rounded-md bg-green-500/10 border border-green-500/20 p-4">
+              <div className="flex items-start">
+                <Check className="size-5 text-green-500 mr-3 mt-0.5" />
+                <div>
+                  <h3 className="text-sm font-medium text-green-500">Registration successful!</h3>
+                  <p className="mt-1 text-sm text-green-400">
+                    Please check your email to verify your account. Redirecting...
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Error Message */}
+          {error && (
+            <div className="rounded-md bg-red-500/10 border border-red-500/20 p-4">
+              <div className="flex items-start">
+                <AlertCircle className="size-5 text-red-500 mr-3 mt-0.5" />
+                <div>
+                  <h3 className="text-sm font-medium text-red-500">Registration failed</h3>
+                  <p className="mt-1 text-sm text-red-400">{error}</p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Name */}
+          <div className="space-y-2">
+            <Label htmlFor="name" className="text-white">{"Full Name"}</Label>
+            <Input
+              id="name"
+              type="text"
+              placeholder="John Doe"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              className="bg-background/40 border-white/10 placeholder:text-white/50 text-white"
+              disabled={loading || success}
+            />
+            <p className="text-xs text-gray-400">
+              {"Optional - helps personalize your experience."}
+            </p>
+          </div>
+
           {/* Email */}
           <div className="space-y-2">
             <Label htmlFor="email" className="text-white">{"Email"}</Label>
@@ -73,6 +153,8 @@ export function SignupForm() {
                   "pr-10 bg-background/40 border-white/10 placeholder:text-white/50 text-white",
                   email.length > 0 && !emailValid && "aria-[invalid=true]:ring-destructive",
                 )}
+                disabled={loading || success}
+                required
               />
               {email.length > 0 && (
                 <span className="pointer-events-none absolute inset-y-0 right-3 flex items-center">
@@ -101,6 +183,8 @@ export function SignupForm() {
                 onChange={(e) => setPassword(e.target.value)}
                 aria-describedby="password-strength"
                 className="pr-10 bg-background/40 border-white/10 placeholder:text-white/50 text-white"
+                disabled={loading || success}
+                required
               />
               <button
                 type="button"
@@ -136,6 +220,8 @@ export function SignupForm() {
                 onChange={(e) => setConfirm(e.target.value)}
                 aria-invalid={confirm.length > 0 && !match}
                 className="pr-10 bg-background/40 border-white/10 placeholder:text-white/50 text-white"
+                disabled={loading || success}
+                required
               />
               <button
                 type="button"
@@ -168,8 +254,12 @@ export function SignupForm() {
           </div>
 
           {/* Submit */}
-          <Button type="submit" className="w-full" disabled={!emailValid || !match || !tos || password.length === 0}>
-            {"Create Account"}
+          <Button
+            type="submit"
+            className="w-full"
+            disabled={!emailValid || !match || !tos || password.length === 0 || loading || success}
+          >
+            {loading ? "Creating Account..." : success ? "Account Created!" : "Create Account"}
           </Button>
 
           {/* Divider */}

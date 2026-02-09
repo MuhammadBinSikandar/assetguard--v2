@@ -5,9 +5,10 @@ import { cookies } from 'next/headers';
 import type { DecodedAccessToken, DecodedRefreshToken } from '@/db/drizzle/models';
 
 // Environment variables with defaults
-const JWT_ALG = (process.env.JWT_ALG || 'RS256') as jwt.Algorithm;
-const ACCESS_TOKEN_EXP = process.env.ACCESS_TOKEN_EXP || '15m';
+const JWT_ALG = 'HS256' as const;
+const ACCESS_TOKEN_EXP = process.env.ACCESS_TOKEN_EXP || '1h';
 const REFRESH_TOKEN_EXP = process.env.REFRESH_TOKEN_EXP || '30d';
+const REFRESH_TOKEN_EXP_REMEMBER = process.env.REFRESH_TOKEN_EXP_REMEMBER || '30d';
 const COOKIE_DOMAIN = process.env.COOKIE_DOMAIN || 'localhost';
 const COOKIE_SECURE = process.env.COOKIE_SECURE === 'true' || process.env.NODE_ENV === 'production';
 const COOKIE_SAME_SITE = (process.env.COOKIE_SAME_SITE || 'strict') as 'strict' | 'lax' | 'none';
@@ -70,12 +71,13 @@ export function createAccessToken(payload: {
     },
     JWT_ACCESS_SECRET,
     {
-      algorithm: JWT_ALG,
       expiresIn,
-    }
+    } as jwt.SignOptions
   );
 
-  const expiresAt = new Date(Date.now() + ms(expiresIn));
+  // @ts-ignore - ms() accepts string and returns number
+  const expiresInMs: number = typeof expiresIn === 'string' ? ms(expiresIn) : expiresIn;
+  const expiresAt = new Date(Date.now() + expiresInMs);
 
   return { token, expiresAt, jti };
 }
@@ -84,15 +86,16 @@ export function createAccessToken(payload: {
  * Create a refresh token (long-lived)
  * Returns both the raw token (for cookie) and JTI (for DB tracking)
  * @param userId - User ID
+ * @param rememberMe - If true, use extended expiration
  * @returns Token data
  */
-export function createRefreshToken(userId: string): {
+export function createRefreshToken(userId: string, rememberMe: boolean = false): {
   token: string;
   jti: string;
   expiresAt: Date;
 } {
   const jti = generateJTI();
-  const expiresIn = REFRESH_TOKEN_EXP;
+  const expiresIn = rememberMe ? REFRESH_TOKEN_EXP_REMEMBER : REFRESH_TOKEN_EXP;
 
   const token = jwt.sign(
     {
@@ -101,12 +104,13 @@ export function createRefreshToken(userId: string): {
     },
     JWT_REFRESH_SECRET,
     {
-      algorithm: JWT_ALG,
       expiresIn,
-    }
+    } as jwt.SignOptions
   );
 
-  const expiresAt = new Date(Date.now() + ms(expiresIn));
+  // @ts-ignore - ms() accepts string and returns number
+  const expiresInMs: number = typeof expiresIn === 'string' ? ms(expiresIn) : expiresIn;
+  const expiresAt = new Date(Date.now() + expiresInMs);
 
   return { token, jti, expiresAt };
 }
@@ -253,6 +257,22 @@ export function generateEmailVerificationToken(): {
   const expiresAt = new Date(Date.now() + ms('24h')); // 24 hours
 
   return { rawToken, expiresAt };
+}
+
+/**
+ * Generate 6-digit OTP code
+ * @returns OTP object with code and expiration
+ */
+export function generateOTP(): {
+  otpCode: string;
+  expiresAt: Date;
+} {
+  // Generate a cryptographically secure 6-digit OTP using crypto.randomInt
+  const otpNumber = crypto.randomInt(0, 1_000_000);
+  const otpCode = otpNumber.toString().padStart(6, '0');
+  const expiresAt = new Date(Date.now() + ms('10m' as ms.StringValue)); // 10 minutes
+
+  return { otpCode, expiresAt };
 }
 
 /**

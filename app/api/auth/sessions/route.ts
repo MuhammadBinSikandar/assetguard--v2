@@ -72,7 +72,14 @@ export async function GET(request: NextRequest) {
     });
 
     // Format sessions with current indicator
-    const formattedSessions = sessions.map((session) => ({
+    const formattedSessions = sessions.map((session: {
+      id: string;
+      device: string | null;
+      ip: string | null;
+      createdAt: Date;
+      expiresAt: Date;
+      userAgent: string | null;
+    }) => ({
       id: session.id,
       device: session.device || 'Unknown Device',
       ip: session.ip || 'Unknown IP',
