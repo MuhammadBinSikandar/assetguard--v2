@@ -12,6 +12,22 @@ datasource db {
   directUrl = env("DIRECT_URL")
 }
 
+// ── Enums ────────────────────────────────────────────────────────────────────
+
+enum KycStatus {
+  IDLE
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum Role {
+  USER
+  ADMIN
+}
+
+// ── Models ───────────────────────────────────────────────────────────────────
+
 model User {
   id                    String                      @id @default(uuid())
   email                 String                      @unique
@@ -26,14 +42,38 @@ model User {
   createdAt             DateTime                    @default(now())
   updatedAt             DateTime                    @updatedAt
 
+  // KYC & Blockchain fields
+  kycStatus             KycStatus                   @default(IDLE)
+  walletAddress         String?                     @unique
+  role                  Role                        @default(USER)
+
   // Relations
   refreshTokens         RefreshToken[]
   emailVerification     EmailVerificationToken[]
   passwordResets        PasswordResetToken[]
   auditLogs             AuditLog[]
+  kycRecord             KYCRecord?
 
   @@index([email])
+  @@index([kycStatus])
+  @@index([walletAddress])
   @@map("users")
+}
+
+model KYCRecord {
+  id            String    @id @default(uuid())
+  user          User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId        String    @unique // 1-to-1 relation
+  fullName      String
+  idNumber      String
+  documentUrls  String[]  // Relative paths: /uploads/kyc/file.png (swappable to IPFS hashes later)
+  submittedAt   DateTime  @default(now())
+  reviewedAt    DateTime?
+  reviewedBy    String?   // Admin user ID who reviewed
+  adminNotes    String?
+
+  @@index([userId])
+  @@map("kyc_records")
 }
 
 model RefreshToken {

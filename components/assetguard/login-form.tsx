@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Checkbox } from "@/components/ui/checkbox"
+import { clientLogger } from "@/hooks/useClientLogger"
 
 export function LoginForm() {
   const router = useRouter()
@@ -26,7 +27,11 @@ export function LoginForm() {
     setError("")
     setLoading(true)
 
+    clientLogger.info('AUTH', 'Login form submitted', { email });
+
     try {
+      clientLogger.debug('API_CALL', 'POST /api/auth/login', { email, rememberMe });
+      
       const response = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -40,16 +45,52 @@ export function LoginForm() {
 
       const result = await response.json()
 
+      clientLogger.info('API_RESPONSE', 'Login API response', {
+        status: response.status,
+        success: result.success,
+        userRoles: result.data?.user?.roles,
+        userEmail: result.data?.user?.email,
+        emailVerified: result.data?.user?.emailVerified,
+      });
+
       if (!result.success) {
+        clientLogger.warn('AUTH', 'Login failed', { message: result.message });
         setError(result.message || 'Login failed. Please try again.')
         setLoading(false)
         return
       }
 
-      // Redirect immediately on success
+      // Redirect admins to admin panel, others to dashboard
       const next = searchParams.get('next')
-      window.location.href = next || '/dashboard'
+      const userRoles = result.data?.user?.roles || []
+      const isAdmin = userRoles.includes('admin')
+      
+      let redirectTo = '/dashboard'
+      if (next) {
+        redirectTo = next
+        clientLogger.info('REDIRECT', `Redirecting to 'next' parameter: ${next}`, { next });
+      } else if (isAdmin) {
+        redirectTo = '/admin'
+        clientLogger.info('REDIRECT', 'Admin detected, redirecting to /admin', { 
+          userRoles, 
+          isAdmin,
+          emailVerified: result.data?.user?.emailVerified 
+        });
+      } else {
+        clientLogger.info('REDIRECT', 'Regular user, redirecting to /dashboard', { userRoles });
+      }
+
+      clientLogger.info('AUTH', 'Login successful, redirecting', { 
+        email: result.data?.user?.email,
+        roles: userRoles,
+        redirectTo 
+      });
+
+      window.location.href = redirectTo
     } catch (err) {
+      clientLogger.error('AUTH', 'Login error', { 
+        error: err instanceof Error ? err.message : 'Unknown error' 
+      });
       setError(err instanceof Error ? err.message : 'Login failed. Please try again.')
       setLoading(false)
     }
@@ -147,7 +188,7 @@ export function LoginForm() {
       {/* Divider */}
       <div className="text-center text-sm text-slate-300">
         {"Don't have an account? "}
-        <Link href="/auth/register" className="text-primary underline-offset-4 hover:underline">
+        <Link href="/signup" className="text-primary underline-offset-4 hover:underline">
           Sign up
         </Link>
       </div>

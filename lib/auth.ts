@@ -58,6 +58,7 @@ export function createAccessToken(payload: {
   userId: string;
   email: string;
   roles: string[];
+  emailVerified?: boolean;
 }): { token: string; expiresAt: Date; jti: string } {
   const jti = generateJTI();
   const expiresIn = ACCESS_TOKEN_EXP;
@@ -67,6 +68,7 @@ export function createAccessToken(payload: {
       userId: payload.userId,
       email: payload.email,
       roles: payload.roles,
+      emailVerified: payload.emailVerified ?? false,
       jti,
     },
     JWT_ACCESS_SECRET,

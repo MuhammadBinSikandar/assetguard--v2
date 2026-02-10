@@ -11,48 +11,71 @@ import { Label } from "@/components/ui/label"
 import {
     CheckCircle2,
     XCircle,
-    AlertCircle,
     FileText,
     User,
-    MapPin,
     Calendar,
-    Shield,
-    Flag,
-    MessageSquare,
-    Download,
     Eye,
     X,
+    Loader2,
+    ImageIcon,
+    FileIcon,
 } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
+import type { KYCApplication } from "./kyc-approvals-tab"
 
-type KYCApplication = {
-    id: string
-    userId: string
-    name: string
-    email: string
-    submissionDate: string
-    documentStatus: "complete" | "partial" | "missing"
-    riskLevel: "low" | "medium" | "high"
-    verificationStatus: "pending" | "document-check" | "face-check" | "complete"
-    daysInQueue: number
-}
+type ModalType = "approve" | "reject" | null
 
-type ModalType = "approve" | "reject" | "request-docs" | null
-
-export function KYCDetailsPanel({ application, onClose }: { application: KYCApplication; onClose: () => void }) {
+export function KYCDetailsPanel({
+    application,
+    onClose,
+    onActionComplete,
+}: {
+    application: KYCApplication
+    onClose: () => void
+    onActionComplete?: () => void
+}) {
     const { toast } = useToast()
     const [activeModal, setActiveModal] = useState<ModalType>(null)
     const [rejectionReason, setRejectionReason] = useState("")
-    const [requestedDocs, setRequestedDocs] = useState("")
+    const [actionLoading, setActionLoading] = useState(false)
 
-    const handleApprove = () => {
-        toast({
-            title: "KYC Approved",
-            description: `${application.name}'s KYC has been approved successfully.`,
-        })
-        setActiveModal(null)
-        onClose()
+    // ── API call to approve / reject ─────────────────────────────────────────
+
+    const handleReview = async (status: "APPROVED" | "REJECTED", adminNotes?: string) => {
+        setActionLoading(true)
+        try {
+            const res = await fetch("/api/kyc/review", {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    userId: application.userId,
+                    status,
+                    adminNotes: adminNotes || undefined,
+                }),
+            })
+            const json = await res.json()
+
+            if (json.success) {
+                toast({
+                    title: status === "APPROVED" ? "KYC Approved" : "KYC Rejected",
+                    description: `${application.fullName}'s KYC has been ${status.toLowerCase()}.`,
+                    variant: status === "APPROVED" ? "default" : "destructive",
+                })
+                setActiveModal(null)
+                setRejectionReason("")
+                onActionComplete?.()
+                onClose()
+            } else {
+                toast({ title: "Error", description: json.message, variant: "destructive" })
+            }
+        } catch {
+            toast({ title: "Error", description: "Network error. Please try again.", variant: "destructive" })
+        } finally {
+            setActionLoading(false)
+        }
     }
+
+    const handleApprove = () => handleReview("APPROVED")
 
     const handleReject = () => {
         if (!rejectionReason.trim()) {
@@ -63,40 +86,26 @@ export function KYCDetailsPanel({ application, onClose }: { application: KYCAppl
             })
             return
         }
-        toast({
-            title: "KYC Rejected",
-            description: `${application.name}'s KYC has been rejected.`,
-            variant: "destructive",
-        })
-        setActiveModal(null)
-        setRejectionReason("")
-        onClose()
+        handleReview("REJECTED", rejectionReason)
     }
 
-    const handleRequestDocs = () => {
-        if (!requestedDocs.trim()) {
-            toast({
-                title: "Error",
-                description: "Please specify which documents are required.",
-                variant: "destructive",
-            })
-            return
-        }
-        toast({
-            title: "Document Request Sent",
-            description: `${application.name} will be notified about missing documents.`,
-        })
-        setActiveModal(null)
-        setRequestedDocs("")
+    // ── Helpers ──────────────────────────────────────────────────────────────
+
+    const getFileIcon = (url: string) => {
+        if (/\.(jpg|jpeg|png|webp)$/i.test(url)) return <ImageIcon className="h-4 w-4" />
+        if (/\.pdf$/i.test(url)) return <FileIcon className="h-4 w-4" />
+        return <FileText className="h-4 w-4" />
     }
 
-    const handleFlag = () => {
-        toast({
-            title: "Application Flagged",
-            description: "This application has been flagged for further review.",
-            variant: "default",
-        })
+    const getFileName = (url: string) => {
+        const parts = url.split("/")
+        const full = parts[parts.length - 1]
+        // Strip the user_[id]_[ts]_ prefix for display
+        const match = full.match(/^user_[^_]+_\d+_(.+)$/)
+        return match ? match[1] : full
     }
+
+    const isPending = application.user.kycStatus === "PENDING"
 
     return (
         <>
@@ -110,6 +119,22 @@ export function KYCDetailsPanel({ application, onClose }: { application: KYCAppl
                     </div>
                 </CardHeader>
                 <CardContent className="space-y-4 max-h-[calc(200vh)] overflow-y-auto">
+                    {/* Status Banner */}
+                    {!isPending && (
+                        <div className={`p-3 rounded-lg text-sm font-medium text-center ${
+                            application.user.kycStatus === "APPROVED"
+                                ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
+                                : "bg-red-500/10 text-red-700 dark:text-red-400"
+                        }`}>
+                            {application.user.kycStatus === "APPROVED" ? "APPROVED" : "REJECTED"}
+                            {application.reviewedAt && (
+                                <span className="block text-xs font-normal mt-1">
+                                    on {new Date(application.reviewedAt).toLocaleString()}
+                                </span>
+                            )}
+                        </div>
+                    )}
+
                     {/* User Information */}
                     <div className="space-y-3">
                         <div className="flex items-center gap-2 text-sm font-semibold">
@@ -118,21 +143,25 @@ export function KYCDetailsPanel({ application, onClose }: { application: KYCAppl
                         </div>
                         <div className="space-y-2 text-sm">
                             <div className="flex justify-between">
-                                <span className="text-muted-foreground">Name:</span>
-                                <span className="font-medium">{application.name}</span>
+                                <span className="text-muted-foreground">Full Name:</span>
+                                <span className="font-medium">{application.fullName}</span>
                             </div>
                             <div className="flex justify-between">
                                 <span className="text-muted-foreground">Email:</span>
-                                <span className="font-medium">{application.email}</span>
+                                <span className="font-medium truncate ml-2">{application.user.email}</span>
+                            </div>
+                            <div className="flex justify-between">
+                                <span className="text-muted-foreground">ID Number:</span>
+                                <span className="font-medium">{application.idNumber}</span>
                             </div>
                             <div className="flex justify-between">
                                 <span className="text-muted-foreground">User ID:</span>
-                                <span className="font-medium">{application.userId}</span>
+                                <span className="font-medium text-xs truncate ml-2">{application.userId}</span>
                             </div>
                             <div className="flex justify-between">
                                 <span className="text-muted-foreground">Submitted:</span>
                                 <span className="font-medium">
-                                    {new Date(application.submissionDate).toLocaleDateString()}
+                                    {new Date(application.submittedAt).toLocaleDateString()}
                                 </span>
                             </div>
                         </div>
@@ -140,206 +169,104 @@ export function KYCDetailsPanel({ application, onClose }: { application: KYCAppl
 
                     <Separator />
 
-                    {/* Document Verification */}
+                    {/* Uploaded Documents */}
                     <div className="space-y-3">
                         <div className="flex items-center gap-2 text-sm font-semibold">
                             <FileText className="h-4 w-4" />
-                            Document Verification
+                            Uploaded Documents ({application.documentUrls.length})
                         </div>
 
-                        {/* Government ID */}
-                        <div className="p-3 border rounded-lg space-y-2">
-                            <div className="flex items-center justify-between">
-                                <span className="text-sm font-medium">Government ID</span>
-                                <CheckCircle2 className="h-4 w-4 text-emerald-600" />
-                            </div>
-                            <div className="text-xs text-muted-foreground">
-                                <div>Type: Passport</div>
-                                <div>Number: P8472****</div>
-                                <div>Expiry: 12/2030</div>
-                            </div>
-                            <div className="flex gap-2 pt-1">
-                                <Button size="sm" variant="outline" className="text-xs h-7 flex-1">
-                                    <Eye className="h-3 w-3 mr-1" />
-                                    View
-                                </Button>
-                                <Button size="sm" variant="outline" className="text-xs h-7 flex-1">
-                                    <Download className="h-3 w-3 mr-1" />
-                                    Download
-                                </Button>
-                            </div>
-                        </div>
+                        {application.documentUrls.length === 0 && (
+                            <p className="text-sm text-muted-foreground italic">No documents uploaded.</p>
+                        )}
 
-                        {/* Facial Recognition */}
-                        <div className="p-3 border rounded-lg space-y-2">
-                            <div className="flex items-center justify-between">
-                                <span className="text-sm font-medium">Facial Recognition</span>
-                                <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                        {application.documentUrls.map((url, idx) => (
+                            <div key={idx} className="p-3 border rounded-lg space-y-2">
+                                <div className="flex items-center gap-2">
+                                    {getFileIcon(url)}
+                                    <span className="text-sm font-medium truncate flex-1">
+                                        {getFileName(url)}
+                                    </span>
+                                </div>
+                                <div className="flex gap-2 pt-1">
+                                    <Button
+                                        size="sm"
+                                        variant="outline"
+                                        className="text-xs h-7 flex-1"
+                                        asChild
+                                    >
+                                        <a href={`/api${url}`} target="_blank" rel="noopener noreferrer">
+                                            <Eye className="h-3 w-3 mr-1" />
+                                            View
+                                        </a>
+                                    </Button>
+                                </div>
                             </div>
-                            <div className="text-xs text-muted-foreground">
-                                Match confidence: 98.7%
-                            </div>
-                            <div className="flex gap-2 pt-1">
-                                <Button size="sm" variant="outline" className="text-xs h-7 flex-1">
-                                    <Eye className="h-3 w-3 mr-1" />
-                                    View
-                                </Button>
-                            </div>
-                        </div>
-
-                        {/* Address Verification */}
-                        <div className="p-3 border rounded-lg space-y-2">
-                            <div className="flex items-center justify-between">
-                                <span className="text-sm font-medium">Address Verification</span>
-                                <AlertCircle className="h-4 w-4 text-yellow-600" />
-                            </div>
-                            <div className="text-xs text-muted-foreground">
-                                <div>Type: Utility Bill</div>
-                                <div>Date: 2025-09-15</div>
-                            </div>
-                            <div className="flex gap-2 pt-1">
-                                <Button size="sm" variant="outline" className="text-xs h-7 flex-1">
-                                    <Eye className="h-3 w-3 mr-1" />
-                                    View
-                                </Button>
-                                <Button size="sm" variant="outline" className="text-xs h-7 flex-1">
-                                    <Download className="h-3 w-3 mr-1" />
-                                    Download
-                                </Button>
-                            </div>
-                        </div>
+                        ))}
                     </div>
 
                     <Separator />
 
-                    {/* Compliance Checks */}
-                    <div className="space-y-3">
-                        <div className="flex items-center gap-2 text-sm font-semibold">
-                            <Shield className="h-4 w-4" />
-                            Compliance Checks
-                        </div>
-                        <div className="space-y-2">
-                            <div className="flex items-center justify-between text-sm">
-                                <span className="text-muted-foreground">Sanctions Screening</span>
-                                <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                    {/* Admin Notes (if previously reviewed) */}
+                    {application.adminNotes && (
+                        <>
+                            <div className="space-y-3">
+                                <div className="flex items-center gap-2 text-sm font-semibold">
+                                    <Calendar className="h-4 w-4" />
+                                    Admin Notes
+                                </div>
+                                <p className="text-sm text-muted-foreground bg-muted p-3 rounded-lg">
+                                    {application.adminNotes}
+                                </p>
                             </div>
-                            <div className="flex items-center justify-between text-sm">
-                                <span className="text-muted-foreground">PEP Check</span>
-                                <CheckCircle2 className="h-4 w-4 text-emerald-600" />
-                            </div>
-                            <div className="flex items-center justify-between text-sm">
-                                <span className="text-muted-foreground">Adverse Media</span>
-                                <CheckCircle2 className="h-4 w-4 text-emerald-600" />
-                            </div>
-                            <div className="flex items-center justify-between text-sm">
-                                <span className="text-muted-foreground">Age Verification</span>
-                                <CheckCircle2 className="h-4 w-4 text-emerald-600" />
-                            </div>
-                        </div>
-                    </div>
+                            <Separator />
+                        </>
+                    )}
 
-                    <Separator />
-
-                    {/* Risk Assessment */}
-                    <div className="space-y-3">
-                        <div className="flex items-center gap-2 text-sm font-semibold">
-                            <AlertCircle className="h-4 w-4" />
-                            Risk Assessment
+                    {/* Action Buttons – only for PENDING applications */}
+                    {isPending && (
+                        <div className="space-y-2 pt-2">
+                            <Button
+                                className="w-full bg-emerald-600 hover:bg-emerald-700"
+                                onClick={() => setActiveModal("approve")}
+                            >
+                                <CheckCircle2 className="mr-2 h-4 w-4" />
+                                Approve KYC
+                            </Button>
+                            <Button
+                                className="w-full"
+                                variant="destructive"
+                                onClick={() => setActiveModal("reject")}
+                            >
+                                <XCircle className="mr-2 h-4 w-4" />
+                                Reject KYC
+                            </Button>
                         </div>
-                        <div className="space-y-2">
-                            <div className="flex items-center justify-between">
-                                <span className="text-sm text-muted-foreground">Overall Risk Level</span>
-                                <Badge variant={application.riskLevel === "low" ? "default" : "destructive"}>
-                                    {application.riskLevel.toUpperCase()}
-                                </Badge>
-                            </div>
-                            <div className="text-xs text-muted-foreground space-y-1">
-                                <div>• Document authenticity: Verified</div>
-                                <div>• Geographic risk: Low</div>
-                                <div>• Transaction pattern: Normal</div>
-                                <div>• Identity confidence: High (98%)</div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <Separator />
-
-                    {/* Activity Log */}
-                    <div className="space-y-3">
-                        <div className="flex items-center gap-2 text-sm font-semibold">
-                            <Calendar className="h-4 w-4" />
-                            Activity Timeline
-                        </div>
-                        <div className="space-y-2">
-                            <div className="flex gap-2 text-xs">
-                                <div className="text-muted-foreground min-w-[80px]">Oct 8, 10:30</div>
-                                <div>KYC submitted</div>
-                            </div>
-                            <div className="flex gap-2 text-xs">
-                                <div className="text-muted-foreground min-w-[80px]">Oct 8, 10:45</div>
-                                <div>Documents uploaded</div>
-                            </div>
-                            <div className="flex gap-2 text-xs">
-                                <div className="text-muted-foreground min-w-[80px]">Oct 8, 11:00</div>
-                                <div>Automated checks completed</div>
-                            </div>
-                            <div className="flex gap-2 text-xs">
-                                <div className="text-muted-foreground min-w-[80px]">Oct 8, 11:15</div>
-                                <div>Pending manual review</div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <Separator />
-
-                    {/* Action Buttons */}
-                    <div className="space-y-2 pt-2">
-                        <Button
-                            className="w-full bg-emerald-600 hover:bg-emerald-700"
-                            onClick={() => setActiveModal("approve")}
-                        >
-                            <CheckCircle2 className="mr-2 h-4 w-4" />
-                            Approve KYC
-                        </Button>
-                        <Button
-                            className="w-full"
-                            variant="destructive"
-                            onClick={() => setActiveModal("reject")}
-                        >
-                            <XCircle className="mr-2 h-4 w-4" />
-                            Reject KYC
-                        </Button>
-                        <Button
-                            className="w-full"
-                            variant="outline"
-                            onClick={() => setActiveModal("request-docs")}
-                        >
-                            <MessageSquare className="mr-2 h-4 w-4" />
-                            Request Documents
-                        </Button>
-                        <Button className="w-full" variant="outline" onClick={handleFlag}>
-                            <Flag className="mr-2 h-4 w-4" />
-                            Flag for Review
-                        </Button>
-                    </div>
+                    )}
                 </CardContent>
             </Card>
 
-            {/* Approval Modal */}
+            {/* Approval Confirmation Modal */}
             <Dialog open={activeModal === "approve"} onOpenChange={() => setActiveModal(null)}>
                 <DialogContent>
                     <DialogHeader>
                         <DialogTitle>Approve KYC Application</DialogTitle>
                         <DialogDescription>
-                            Are you sure you want to approve this KYC application for {application.name}?
-                            This action will grant them full access to the platform.
+                            Are you sure you want to approve this KYC application for{" "}
+                            <strong>{application.fullName}</strong>?
+                            This will grant them full access to the platform (property registration, minting, etc.).
                         </DialogDescription>
                     </DialogHeader>
                     <DialogFooter>
-                        <Button variant="outline" onClick={() => setActiveModal(null)}>
+                        <Button variant="outline" onClick={() => setActiveModal(null)} disabled={actionLoading}>
                             Cancel
                         </Button>
-                        <Button onClick={handleApprove} className="bg-emerald-600 hover:bg-emerald-700">
+                        <Button
+                            onClick={handleApprove}
+                            className="bg-emerald-600 hover:bg-emerald-700"
+                            disabled={actionLoading}
+                        >
+                            {actionLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                             Approve
                         </Button>
                     </DialogFooter>
@@ -352,7 +279,8 @@ export function KYCDetailsPanel({ application, onClose }: { application: KYCAppl
                     <DialogHeader>
                         <DialogTitle>Reject KYC Application</DialogTitle>
                         <DialogDescription>
-                            Please provide a reason for rejecting this application. The user will be notified.
+                            Please provide a reason for rejecting this application. The user will be able to
+                            re-submit with corrected documents.
                         </DialogDescription>
                     </DialogHeader>
                     <div className="space-y-2">
@@ -366,40 +294,13 @@ export function KYCDetailsPanel({ application, onClose }: { application: KYCAppl
                         />
                     </div>
                     <DialogFooter>
-                        <Button variant="outline" onClick={() => setActiveModal(null)}>
+                        <Button variant="outline" onClick={() => setActiveModal(null)} disabled={actionLoading}>
                             Cancel
                         </Button>
-                        <Button variant="destructive" onClick={handleReject}>
+                        <Button variant="destructive" onClick={handleReject} disabled={actionLoading}>
+                            {actionLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                             Reject
                         </Button>
-                    </DialogFooter>
-                </DialogContent>
-            </Dialog>
-
-            {/* Request Documents Modal */}
-            <Dialog open={activeModal === "request-docs"} onOpenChange={() => setActiveModal(null)}>
-                <DialogContent>
-                    <DialogHeader>
-                        <DialogTitle>Request Additional Documents</DialogTitle>
-                        <DialogDescription>
-                            Specify which documents are required from the user.
-                        </DialogDescription>
-                    </DialogHeader>
-                    <div className="space-y-2">
-                        <Label htmlFor="requested-docs">Required Documents</Label>
-                        <Textarea
-                            id="requested-docs"
-                            placeholder="List the documents needed..."
-                            value={requestedDocs}
-                            onChange={(e) => setRequestedDocs(e.target.value)}
-                            rows={4}
-                        />
-                    </div>
-                    <DialogFooter>
-                        <Button variant="outline" onClick={() => setActiveModal(null)}>
-                            Cancel
-                        </Button>
-                        <Button onClick={handleRequestDocs}>Send Request</Button>
                     </DialogFooter>
                 </DialogContent>
             </Dialog>

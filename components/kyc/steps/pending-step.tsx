@@ -1,7 +1,11 @@
+"use client"
+
+import { useRouter } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { CheckCircle2 } from "lucide-react"
 
 export function PendingStep() {
+  const router = useRouter()
   return (
     <section className="mx-auto max-w-3xl text-center">
       <div className="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-emerald-500/15 text-emerald-400 ring-1 ring-emerald-500/30">
@@ -25,7 +29,7 @@ export function PendingStep() {
       </div>
 
       <div className="mt-6 flex items-center justify-center gap-3">
-        <Button className="w-48">Return to Dashboard</Button>
+        <Button className="w-48" onClick={() => router.push("/dashboard")}>Return to Dashboard</Button>
         <a href="/support" className="text-sm text-blue-400 underline-offset-4 hover:underline">
           Contact Support
         </a>

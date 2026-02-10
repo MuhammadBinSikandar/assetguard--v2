@@ -65,6 +65,17 @@ export function FacialStep({
     return () => cancelAnimationFrame(raf)
   }, [streamReady])
 
+  const stopCamera = () => {
+    const video = videoRef.current
+    const stream = video?.srcObject as MediaStream | null
+    if (stream) {
+      stream.getTracks().forEach((t) => t.stop())
+      video!.srcObject = null
+    }
+    setStreamReady(false)
+    setFaceDetected(false)
+  }
+
   const capture = () => {
     const video = videoRef.current
     const canvas = canvasRef.current
@@ -76,6 +87,7 @@ export function FacialStep({
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
     const data = canvas.toDataURL("image/jpeg", 0.9)
     setPhoto(data)
+    stopCamera()
   }
 
   return (
@@ -127,7 +139,16 @@ export function FacialStep({
                 alt="Captured face"
                 className="w-full rounded-md border border-slate-800"
               />
-              <Button variant="ghost" className="mt-2" onClick={() => setPhoto(null)}>
+              <Button variant="ghost" className="mt-2" onClick={() => {
+                setPhoto(null)
+                // Restart camera for retake
+                navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" } }).then((stream) => {
+                  if (videoRef.current) {
+                    videoRef.current.srcObject = stream
+                    videoRef.current.onloadeddata = () => setStreamReady(true)
+                  }
+                }).catch(() => {})
+              }}>
                 Retake
               </Button>
             </div>

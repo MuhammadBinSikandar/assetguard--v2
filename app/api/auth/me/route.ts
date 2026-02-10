@@ -1,13 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/db/prismaClient';
 import { getUserFromAccessToken } from '@/lib/auth';
+import { apiLogger } from '@/lib/debug-logger';
 
 export async function GET(request: NextRequest) {
   try {
+    apiLogger.request('GET', '/api/auth/me');
+    
     // Get user from access token
     const decoded = await getUserFromAccessToken();
 
     if (!decoded) {
+      apiLogger.response('GET', '/api/auth/me', 401, false);
       return NextResponse.json(
         {
           success: false,
@@ -33,6 +37,7 @@ export async function GET(request: NextRequest) {
     });
 
     if (!user) {
+      apiLogger.response('GET', '/api/auth/me', 404, false);
       return NextResponse.json(
         {
           success: false,
@@ -42,6 +47,9 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    apiLogger.response('GET', '/api/auth/me', 200, true);
+    apiLogger.request('GET', '/api/auth/me', decoded.userId);
+    
     return NextResponse.json(
       {
         success: true,
@@ -54,6 +62,7 @@ export async function GET(request: NextRequest) {
     );
   } catch (error) {
     console.error('Get user profile error:', error);
+    apiLogger.error('GET', '/api/auth/me', error instanceof Error ? error.message : 'Unknown error');
 
     return NextResponse.json(
       {

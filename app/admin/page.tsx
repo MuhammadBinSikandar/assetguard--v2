@@ -1,23 +1,126 @@
 "use client"
 
+import { useState, useEffect } from "react"
+import { useRouter } from "next/navigation"
 import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar"
 import { useIsMobile } from "@/hooks/use-mobile"
+import { useClientLogger } from "@/hooks/useClientLogger"
 import { AdminSidebar } from "@/components/admin/admin-sidebar"
 import { AdminTopBar } from "@/components/admin/admin-topbar"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { CheckCircle2, FileText, TrendingUp, Activity } from "lucide-react"
+import { CheckCircle2, FileText, TrendingUp, Activity, Loader2 } from "lucide-react"
 import Link from "next/link"
 
 export default function AdminPanel() {
     const isMobile = useIsMobile()
+    const router = useRouter()
+    const logger = useClientLogger()
 
-    // Mock stats
-    const stats = {
-        pendingKYC: 48,
-        pendingProperties: 23,
-        todayApprovals: 15,
+    const [stats, setStats] = useState({
+        pendingKYC: 0,
+        pendingProperties: 0,
+        todayApprovals: 0,
         systemHealth: "online" as const,
+        loading: true,
+    })
+
+    const [authState, setAuthState] = useState({
+        loading: true,
+        authenticated: false,
+        isAdmin: false,
+        user: null as any,
+    })
+
+    useEffect(() => {
+        logger.logComponentMount('AdminPanel');
+        
+        async function checkAuth() {
+            logger.logApiCall('GET', '/api/auth/me');
+            
+            try {
+                const response = await fetch('/api/auth/me');
+                const data = await response.json();
+                
+                logger.logApiResponse('GET', '/api/auth/me', response.status, data.success, data);
+                
+                if (!data.success || !data.data?.user) {
+                    logger.logAuthCheck(false);
+                    logger.logRedirect('/admin', '/login', 'Not authenticated');
+                    router.push('/login?next=/admin');
+                    return;
+                }
+
+                const user = data.data.user;
+                const isAdmin = user.roles?.includes('admin');
+                
+                logger.logAuthCheck(true, user.roles);
+                logger.logRoleCheck(['admin'], user.roles || [], isAdmin);
+
+                if (!isAdmin) {
+                    logger.logRedirect('/admin', '/dashboard', 'Not an admin');
+                    router.push('/dashboard?error=unauthorized');
+                    return;
+                }
+
+                setAuthState({
+                    loading: false,
+                    authenticated: true,
+                    isAdmin: true,
+                    user,
+                });
+            } catch (error) {
+                logger.logError('Failed to check auth', { error: error instanceof Error ? error.message : 'Unknown error' });
+                logger.logRedirect('/admin', '/login', 'Auth check failed');
+                router.push('/login?next=/admin');
+            }
+        }
+
+        checkAuth();
+    }, [router, logger]);
+
+    useEffect(() => {
+        if (!authState.loading && authState.authenticated && authState.isAdmin) {
+            async function fetchStats() {
+                logger.logApiCall('GET', '/api/kyc/review');
+                
+                try {
+                    // Fetch pending KYC count
+                    const res = await fetch("/api/kyc/review?status=PENDING&limit=1")
+                    const json = await res.json()
+                    
+                    logger.logApiResponse('GET', '/api/kyc/review', res.status, json.success, json);
+                    
+                    if (json.success) {
+                        setStats((prev) => ({
+                            ...prev,
+                            pendingKYC: json.meta.total,
+                            loading: false,
+                        }))
+                    } else {
+                        setStats((prev) => ({ ...prev, loading: false }))
+                    }
+                } catch (error) {
+                    logger.logError('Failed to fetch stats', { error: error instanceof Error ? error.message : 'Unknown error' });
+                    setStats((prev) => ({ ...prev, loading: false }))
+                }
+            }
+            fetchStats()
+        }
+    }, [authState, logger])
+
+    // Show loading state while checking auth
+    if (authState.loading) {
+        return (
+            <div className="flex h-screen items-center justify-center">
+                <Loader2 className="h-8 w-8 animate-spin" />
+            </div>
+        );
+    }
+
+    // Don't render admin panel if not authenticated or not admin
+    if (!authState.authenticated || !authState.isAdmin) {
+        return null;
     }
 
     return (
@@ -45,7 +148,9 @@ export default function AdminPanel() {
                                     <CheckCircle2 className="h-5 w-5 text-blue-600" />
                                 </div>
                                 <div>
-                                    <p className="text-2xl font-semibold">{stats.pendingKYC}</p>
+                                    <p className="text-2xl font-semibold">
+                                        {stats.loading ? <Loader2 className="h-5 w-5 animate-spin inline" /> : stats.pendingKYC}
+                                    </p>
                                     <p className="text-xs text-muted-foreground">Pending KYC Reviews</p>
                                     <div className="flex items-center gap-1 mt-1">
                                         <TrendingUp className="h-3 w-3 text-emerald-600" />

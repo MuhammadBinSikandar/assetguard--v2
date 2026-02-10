@@ -234,6 +234,7 @@ export async function POST(request: NextRequest) {
       userId: user.id,
       email: user.email,
       roles: user.roles,
+      emailVerified: user.emailVerified,
     });
 
     // Maintain the same expiration duration for refresh token (check if it was long-lived)

@@ -27,6 +27,13 @@ export function KYCPromptProvider({ children }: { children: React.ReactNode }) {
             return
         }
 
+        // Admins skip KYC prompt entirely (auto-approved on promotion)
+        const isAdmin = user?.roles?.includes('admin') || false
+        if (isAdmin) {
+            setHasChecked(true)
+            return
+        }
+
         // Check if user is KYC verified
         const isKYCVerified = user?.roles?.includes('kyc_verified') || false
 

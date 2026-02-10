@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
 
@@ -17,6 +17,7 @@ export function DocumentStep({
 }) {
   const [v, setV] = useState<DocumentData>(value ?? { type: "passport", file: null })
   const [preview, setPreview] = useState<string | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => onChange(v), [v]) // eslint-disable-line
 
@@ -67,12 +68,25 @@ export function DocumentStep({
         <p className="text-slate-300">Drag and drop your document here</p>
         <p className="text-sm text-slate-400">PNG, JPG or PDF up to 10MB</p>
         <div className="mt-4">
-          <input id="browse" type="file" className="hidden" onChange={onPick} accept=".png,.jpg,.jpeg,.pdf" />
-          <label htmlFor="browse">
-            <Button type="button" variant="secondary">
-              Browse Files
-            </Button>
-          </label>
+          <input
+            ref={fileInputRef}
+            type="file"
+            className="sr-only"
+            tabIndex={-1}
+            onChange={onPick}
+            accept=".png,.jpg,.jpeg,.pdf"
+          />
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={(e) => {
+              e.preventDefault()
+              e.stopPropagation()
+              fileInputRef.current?.click()
+            }}
+          >
+            Browse Files
+          </Button>
         </div>
       </div>
 

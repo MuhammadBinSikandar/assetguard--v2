@@ -15,6 +15,7 @@ import { hashToken } from '@/lib/bcrypt';
 import { checkRateLimit, resetRateLimit } from '@/lib/rateLimit';
 import { createAuditLog, securityLog } from '@/lib/logger';
 import { generateCSRFToken } from '@/lib/csrf';
+import { authLogger, persistentLogger } from '@/lib/debug-logger';
 
 const MAX_FAILED_ATTEMPTS = 5;
 
@@ -41,8 +42,12 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { email, password, rememberMe } = body;
 
+    // Log login attempt
+    authLogger.loginAttempt(email, deviceInfo.ip || undefined);
+
     // Validate required fields
     if (!email || !password) {
+      authLogger.loginFailure(email, 'Missing credentials', deviceInfo.ip || undefined);
       return NextResponse.json(
         {
           success: false,
@@ -61,6 +66,7 @@ export async function POST(request: NextRequest) {
     const invalidCredentialsMessage = 'Invalid email or password';
 
     if (!user) {
+      authLogger.loginFailure(email, 'User not found', deviceInfo.ip || undefined);
       await createAuditLog({
         action: 'failed_login',
         details: { email, reason: 'user_not_found' },
@@ -80,6 +86,7 @@ export async function POST(request: NextRequest) {
 
     // Check if account is locked
     if (isAccountLocked(user.lockedUntil)) {
+      authLogger.loginFailure(email, 'Account locked', deviceInfo.ip || undefined);
       await createAuditLog({
         userId: user.id,
         action: 'failed_login',
@@ -102,6 +109,7 @@ export async function POST(request: NextRequest) {
     const isValidPassword = await comparePassword(password, user.passwordHash);
 
     if (!isValidPassword) {
+      authLogger.loginFailure(email, 'Invalid password', deviceInfo.ip || undefined);
       // Increment failed login attempts
       const newFailedAttempts = user.failedLoginAttempts + 1;
       const lockoutDuration = calculateLockoutDuration(newFailedAttempts);
@@ -164,16 +172,30 @@ export async function POST(request: NextRequest) {
       });
     }
 
+    // Log successful login
+    authLogger.loginSuccess(
+      user.id, 
+      user.email, 
+      user.roles, 
+      user.emailVerified, 
+      deviceInfo.ip || undefined
+    );
+
     // Create access token
     const { token: accessToken, expiresAt: accessExpiry, jti: accessJti } = createAccessToken({
       userId: user.id,
       email: user.email,
       roles: user.roles,
+      emailVerified: user.emailVerified,
     });
+
+    authLogger.tokenCreated(user.id, 'access', accessExpiry);
 
     // Create refresh token with rememberMe option
     const refreshTokenData = createRefreshToken(user.id, rememberMe || false);
     const hashedRefreshToken = await hashToken(refreshTokenData.token);
+
+    authLogger.tokenCreated(user.id, 'refresh', refreshTokenData.expiresAt);
 
     // Store refresh token in database
     const refreshTokenRecord = await prisma.refreshToken.create({

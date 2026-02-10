@@ -1,22 +1,27 @@
-version: '3.8'
-
 services:
   app:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    image: app-dev
+    build: .
     ports:
       - "3000:3000"
+    volumes:
+      - .:/app
+      - /app/node_modules
+      - ./logs:/app/logs
+      - ./uploads:/app/uploads
     environment:
-      - NODE_ENV=production
-      - DATABASE_URL=${DATABASE_URL}
-      - DIRECT_URL=${DIRECT_URL}
-      - JWT_ACCESS_PRIVATE_KEY=${JWT_ACCESS_PRIVATE_KEY}
-      - JWT_REFRESH_PRIVATE_KEY=${JWT_REFRESH_PRIVATE_KEY}
-      - EMAIL_PROVIDER=${EMAIL_PROVIDER}
-      - EMAIL_HOST=${EMAIL_HOST}
-      - EMAIL_PORT=${EMAIL_PORT}
-      - EMAIL_USER=${EMAIL_USER}
-      - EMAIL_PASSWORD=${EMAIL_PASSWORD}
-      - EMAIL_FROM=${EMAIL_FROM}
-    restart: unless-stopped
+      NODE_ENV: development
+      DATABASE_URL: ${DATABASE_URL}
+      DIRECT_URL: ${DIRECT_URL}
+      JWT_ACCESS_PRIVATE_KEY: ${JWT_ACCESS_PRIVATE_KEY}
+      JWT_REFRESH_PRIVATE_KEY: ${JWT_REFRESH_PRIVATE_KEY}
+      EMAIL_PROVIDER: ${EMAIL_PROVIDER}
+      EMAIL_HOST: ${EMAIL_HOST}
+      EMAIL_PORT: ${EMAIL_PORT}
+      EMAIL_USER: ${EMAIL_USER}
+      EMAIL_PASSWORD: ${EMAIL_PASSWORD}
+      EMAIL_FROM: ${EMAIL_FROM}
+      DEBUG_AUTH: ${DEBUG_AUTH:-true}
+      DEBUG_MODE: ${DEBUG_MODE:-true}
+      NEXT_PUBLIC_DEBUG_AUTH: ${NEXT_PUBLIC_DEBUG_AUTH:-true}
+    command: npm run dev

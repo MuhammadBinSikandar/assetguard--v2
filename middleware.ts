@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { verifyAccessTokenEdge } from './lib/auth-edge';
+import { middlewareLogger } from './lib/debug-logger';
 
 // Define protected routes and their required roles
 const PROTECTED_ROUTES: Record<string, { roles?: string[]; requireEmailVerified?: boolean }> = {
@@ -71,16 +72,22 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // Check if route is public
-  const isPublicRoute = PUBLIC_ROUTES.some((route) => matchesRoute(pathname, route));
-
   // Get access token from cookie
   const accessToken = request.cookies.get('access_token')?.value;
+  
+  // Log middleware start
+  middlewareLogger.start(pathname, !!accessToken);
+
+  // Check if route is public
+  const isPublicRoute = PUBLIC_ROUTES.some((route) => matchesRoute(pathname, route));
 
   // Verify access token
   let user = null;
   if (accessToken) {
     user = await verifyAccessTokenEdge(accessToken);
+    middlewareLogger.tokenVerification(!!user, user, pathname);
+  } else {
+    middlewareLogger.tokenVerification(false, null, pathname);
   }
 
   // Find matching protected route
@@ -92,9 +99,13 @@ export async function middleware(request: NextRequest) {
     }
   }
 
+  // Log route analysis
+  middlewareLogger.routeMatch(pathname, !!matchedRoute, isPublicRoute, matchedRoute);
+
   // If route is protected and user is not authenticated
   if (matchedRoute && !user) {
     // Redirect to login with callback
+    middlewareLogger.redirect(pathname, '/login', 'User not authenticated');
     const loginUrl = new URL('/login', request.url);
     loginUrl.searchParams.set('next', pathname);
     return NextResponse.redirect(loginUrl);
@@ -102,19 +113,35 @@ export async function middleware(request: NextRequest) {
 
   // If route is protected and requires specific roles
   if (matchedRoute && user) {
-    // Check email verification requirement
-    if (matchedRoute.requireEmailVerified && !user.emailVerified) {
+    // Check email verification requirement (admins bypass this check)
+    const isAdmin = user.roles.includes('admin');
+    
+    middlewareLogger.emailVerificationCheck(
+      pathname,
+      user.emailVerified || false,
+      matchedRoute.requireEmailVerified || false,
+      isAdmin
+    );
+    
+    if (matchedRoute.requireEmailVerified && !user.emailVerified && !isAdmin) {
+      middlewareLogger.redirect(pathname, '/verify-email', 'Email not verified');
       const verifyUrl = new URL('/verify-email', request.url);
       verifyUrl.searchParams.set('message', 'Please verify your email to access this page');
       return NextResponse.redirect(verifyUrl);
     }
 
     // Check role requirements
-    if (matchedRoute.roles && !hasRequiredRole(user.roles, matchedRoute.roles)) {
-      // User doesn't have required role
-      const unauthorizedUrl = new URL('/dashboard', request.url);
-      unauthorizedUrl.searchParams.set('error', 'unauthorized');
-      return NextResponse.redirect(unauthorizedUrl);
+    if (matchedRoute.roles) {
+      const hasAccess = hasRequiredRole(user.roles, matchedRoute.roles);
+      middlewareLogger.roleCheck(pathname, user.roles, matchedRoute.roles, hasAccess);
+      
+      if (!hasAccess) {
+        // User doesn't have required role
+        middlewareLogger.redirect(pathname, '/dashboard', 'Insufficient permissions');
+        const unauthorizedUrl = new URL('/dashboard', request.url);
+        unauthorizedUrl.searchParams.set('error', 'unauthorized');
+        return NextResponse.redirect(unauthorizedUrl);
+      }
     }
   }
 
@@ -133,6 +160,7 @@ export async function middleware(request: NextRequest) {
 
   // Add user info to request headers for server components
   if (user) {
+    middlewareLogger.allowed(pathname, user);
     const requestHeaders = new Headers(request.headers);
     requestHeaders.set('x-user-id', user.userId);
     requestHeaders.set('x-user-email', user.email);
