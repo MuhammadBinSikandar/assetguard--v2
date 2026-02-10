@@ -7,7 +7,7 @@
 **File:** `lib/debug-logger.ts`
 
 **Changes:**
-- ✅ Logs now written to files in `logs/` directory instead of terminal
+- ✅ Logs now written to files in `logs/` directory (API routes and server components only)
 - ✅ Separate log files for different categories:
   - `combined.log` - All logs
   - `auth.log` - Authentication and tokens
@@ -17,6 +17,14 @@
 - ✅ Automatic log rotation when files reach 10MB
 - ✅ Auto-cleanup of logs older than 7 days
 - ✅ Optional console output controlled by `DEBUG_CONSOLE` env variable
+
+**File:** `lib/debug-logger-edge.ts` *(NEW)*
+
+**Changes:**
+- ✅ Edge Runtime compatible logger for middleware
+- ✅ Console-only logging (Edge Runtime doesn't support file system)
+- ✅ Same logging API as full logger
+- ⚠️ **Note:** Middleware logs go to console only due to Edge Runtime limitations
 
 ### 2. Updated Client Logger
 

@@ -66,17 +66,30 @@ docker compose restart
 
 ### Step 3: View Logs in Real-Time
 
-**Server logs are written to `logs/` directory:**
+**Middleware logs** (routing, role checks) appear in Docker container logs:
+
+```powershell
+# View middleware logs (routing decisions)
+docker compose logs -f app
+
+# Filter for middleware only
+docker compose logs app | Select-String "MIDDLEWARE|ROUTING|ROLE_CHECK"
+
+# Filter for specific route
+docker compose logs app | Select-String "/admin"
+```
+
+**API and authentication logs** are written to `logs/` directory:
 
 ```powershell
 # View all logs in real-time
 docker compose exec app tail -f /app/logs/combined.log
 
-# View auth-specific logs
+# View auth-specific logs (login, tokens, etc)
 docker compose exec app tail -f /app/logs/auth.log
 
-# View middleware/routing logs
-docker compose exec app tail -f /app/logs/middleware.log
+# View API logs
+docker compose exec app tail -f /app/logs/api.log
 
 # View errors only
 docker compose exec app tail -f /app/logs/errors.log
@@ -94,6 +107,8 @@ Get-Content logs\auth.log -Tail 100
 # Search for specific text
 Select-String -Path logs\*.log -Pattern "admin@assetguard.io"
 ```
+
+**⚠️ Important:** Middleware logs only appear in Docker container logs (not files) due to Edge Runtime limitations.
 
 ### Step 4: Check Your Auth Status
 
@@ -114,29 +129,45 @@ This will show:
 
 1. **Start watching logs:**
    ```powershell
-   # Terminal 1: Watch auth logs
+   # Terminal 1: Watch middleware logs (routing decisions)
+   docker compose logs -f app
+   
+   # Terminal 2: Watch auth logs (login, tokens)
    docker compose exec app tail -f /app/logs/auth.log
    
-   # Terminal 2: Watch middleware logs
-   docker compose exec app tail -f /app/logs/middleware.log
+   # Terminal 3: Watch API logs
+   docker compose exec app tail -f /app/logs/api.log
    ```
 
 2. **Open Browser and access the application**
 3. **Login** with your admin credentials
 4. **Try to access** `/admin`
-5. **Check the log files** for detailed flow
+5. **Check the logs** for detailed flow
 
-You'll now see detailed logs in the log files:
+**Tip:** Use `grep` or `Select-String` to filter logs:
+```powershell
+# Filter Docker logs for middleware routing
+docker compose logs app | Select-String "MIDDLEWARE|/admin"
 
-**Server Logs (`logs/auth.log`, `logs/middleware.log`):**
+# Filter file logs for your email
+docker compose exec app grep "admin@assetguard.io" /app/logs/combined.log
+```
+
+You'll now see detailed logs:
+
+**Middleware Logs (Docker container logs via `docker compose logs -f app`):**
+```
+app-1  | [2024-02-11T10:30:46.123Z] [INFO] [MIDDLEWARE] Processing request {"pathname":"/admin","hasToken":true}
+app-1  | [2024-02-11T10:30:46.234Z] [INFO] [TOKEN] Token verification succeeded {"userId":"user_123","roles":["admin","user"]}
+app-1  | [2024-02-11T10:30:46.345Z] [INFO] [ROLE_CHECK] Role verification passed {"userRoles":["admin","user"],"requiredRoles":["admin"],"hasAccess":true}
+app-1  | [2024-02-11T10:30:46.456Z] [INFO] [MIDDLEWARE] Request allowed {"pathname":"/admin","userId":"user_123"}
+```
+
+**API/Auth Logs (File logs via `tail -f /app/logs/auth.log`):**
 ```
 [2024-02-11T10:30:45.123Z] [INFO] [AUTH] Login attempt {"email":"admin@assetguard.io","ip":"172.18.0.1"}
 [2024-02-11T10:30:45.456Z] [INFO] [AUTH] Login successful {"userId":"user_123","email":"admin@assetguard.io","roles":["admin","user"],"emailVerified":true}
 [2024-02-11T10:30:45.789Z] [INFO] [TOKEN] Token created {"userId":"user_123","tokenType":"access"}
-[2024-02-11T10:30:46.123Z] [INFO] [MIDDLEWARE] Processing request {"pathname":"/admin","hasToken":true}
-[2024-02-11T10:30:46.234Z] [INFO] [TOKEN] Token verification succeeded {"userId":"user_123","roles":["admin","user"]}
-[2024-02-11T10:30:46.345Z] [INFO] [ROLE_CHECK] Role verification passed {"userRoles":["admin","user"],"requiredRoles":["admin"],"hasAccess":true}
-[2024-02-11T10:30:46.456Z] [INFO] [MIDDLEWARE] Request allowed {"pathname":"/admin","userId":"user_123"}
 ```
 
 **Client Logs (Browser sessionStorage - download via console):**
@@ -162,16 +193,16 @@ This downloads a JSON file with entries like:
 
 Based on your problem: **"Logged in as admin, redirected to normal dashboard, manually accessing /admin goes to verify-otp page"**
 
-### Look for these in log files:
+### Look for these in logs:
 
 #### 1. Token Verification Issue?
 
 ```powershell
-# Check if token is being set
+# Check if token is being created (file logs)
 docker compose exec app grep "Token created" /app/logs/auth.log
 
-# Check if token verification fails
-docker compose exec app grep "Token verification failed" /app/logs/middleware.log
+# Check if token verification fails (Docker logs)
+docker compose logs app | Select-String "Token verification failed"
 ```
 
 **Solution:** Check if access_token cookie is being set correctly
@@ -179,11 +210,11 @@ docker compose exec app grep "Token verification failed" /app/logs/middleware.lo
 #### 2. Role Check Failing?
 
 ```powershell
-# Check role verification
-docker compose exec app grep "Role verification" /app/logs/middleware.log | tail -n 20
+# Check role verification (Docker logs for middleware)
+docker compose logs app | Select-String "Role verification"
 
 # Look for FAILED role checks
-docker compose exec app grep "Role verification FAILED" /app/logs/middleware.log
+docker compose logs app | Select-String "Role verification FAILED"
 ```
 
 **Solution:** Run `docker compose exec app npx tsx scripts/create-admin.ts <email>` to add admin role
@@ -191,11 +222,11 @@ docker compose exec app grep "Role verification FAILED" /app/logs/middleware.log
 #### 3. Email Not Verified?
 
 ```powershell
-# Check for email verification redirects
-docker compose exec app grep "Email not verified" /app/logs/middleware.log
+# Check for email verification redirects (Docker logs)
+docker compose logs app | Select-String "Email not verified"
 
 # Check redirect patterns
-docker compose exec app grep "Redirect triggered" /app/logs/middleware.log
+docker compose logs app | Select-String "Redirect triggered"
 ```
 
 **Solution:** The create-admin script auto-verifies email, but check with check-auth.ts
@@ -203,8 +234,10 @@ docker compose exec app grep "Redirect triggered" /app/logs/middleware.log
 #### 4. Two-Factor Authentication Issue?
 
 ```powershell
-# Check for OTP-related redirects in client logs
-# Download client logs in browser and search for "verify-otp"
+# Check for OTP-related redirects in Docker logs
+docker compose logs app | Select-String "verify-otp"
+
+# Also check client logs (download from browser)
 ```
 
 **Solution:** Check if 2FA is enabled but not completed
@@ -212,14 +245,14 @@ docker compose exec app grep "Redirect triggered" /app/logs/middleware.log
 ### View All Logs for a Specific User:
 
 ```powershell
-# View all activity for a specific email
+# View all activity for a specific email in file logs
 docker compose exec app grep "admin@assetguard.io" /app/logs/combined.log | tail -n 50
 
 # View just auth events
 docker compose exec app grep "admin@assetguard.io" /app/logs/auth.log
 
-# View middleware decisions for that user
-docker compose exec app grep "admin@assetguard.io" /app/logs/middleware.log
+# View middleware decisions in Docker logs
+docker compose logs app | Select-String "admin@assetguard.io"
 ```
 
 ## 📊 Understanding the Logs
@@ -230,12 +263,22 @@ docker compose exec app grep "admin@assetguard.io" /app/logs/middleware.log
 - 🟡 **WARN** - Issues detected
 - 🔴 **ERROR** - Critical errors
 
-### Log Files
-- **`combined.log`** - All logs in one place
-- **`auth.log`** - Authentication, tokens, sessions
-- **`middleware.log`** - Routing, role checks, redirects
-- **`api.log`** - API requests and responses
-- **`errors.log`** - Errors only
+### Log Locations
+
+**Middleware Logs** (Edge Runtime - Console Only):
+- **Location:** Docker container logs
+- **View:** `docker compose logs -f app`
+- **Categories:** MIDDLEWARE, ROUTING, ROLE_CHECK, TOKEN verification
+- ⚠️ NOT written to files due to Edge Runtime limitations
+
+**API/Server Logs** (Node.js Runtime - File-Based):
+- **Location:** `logs/` directory
+- **Files:**
+  - `combined.log` - All API and server logs
+  - `auth.log` - Authentication, login, tokens
+  - `api.log` - API requests and responses
+  - `errors.log` - Errors only
+- **Categories:** AUTH, TOKEN creation, API, SESSION
 
 ### Log Format
 ```
@@ -244,22 +287,29 @@ docker compose exec app grep "admin@assetguard.io" /app/logs/middleware.log
 
 ### Useful Commands
 
-**View logs in real-time:**
+**View middleware logs (Docker logs):**
+```powershell
+docker compose logs -f app
+docker compose logs app | Select-String "MIDDLEWARE"
+docker compose logs app | Select-String "/admin"
+```
+
+**View API/auth logs (file logs):**
 ```powershell
 docker compose exec app tail -f /app/logs/combined.log
+docker compose exec app tail -f /app/logs/auth.log
 ```
 
 **Search for specific text:**
 ```powershell
+# Search Docker logs
+docker compose logs app | Select-String "admin@assetguard.io"
+
+# Search file logs
 docker compose exec app grep "admin@assetguard.io" /app/logs/auth.log
 ```
 
-**View last 50 lines:**
-```powershell
-docker compose exec app tail -n 50 /app/logs/middleware.log
-```
-
-**On Windows host (without docker exec):**
+**On Windows host (file logs only):**
 ```powershell
 Get-Content logs\combined.log -Wait -Tail 50
 Select-String -Path logs\*.log -Pattern "admin"
@@ -318,9 +368,9 @@ Check user record in database for `twoFactorEnabled` field
 
 ## 📝 Example Debug Session
 
-Here's what a successful admin access looks like in the log files:
+Here's what a successful admin access looks like:
 
-**`logs/auth.log`:**
+**1. Auth/Login Flow** (`logs/auth.log` - file logs):
 ```
 [2024-02-11T10:30:45.123Z] [INFO] [AUTH] Login attempt {"email":"admin@assetguard.io"}
 [2024-02-11T10:30:45.456Z] [INFO] [AUTH] Login successful {"userId":"user_123","roles":["admin","user","kyc_verified"],"emailVerified":true}
@@ -328,17 +378,17 @@ Here's what a successful admin access looks like in the log files:
 [2024-02-11T10:30:45.890Z] [INFO] [TOKEN] Token created {"userId":"user_123","tokenType":"refresh"}
 ```
 
-**`logs/middleware.log`:**
+**2. Middleware Routing** (Docker container logs - `docker compose logs app`):
 ```
-[2024-02-11T10:30:46.123Z] [INFO] [MIDDLEWARE] Processing request {"pathname":"/admin","hasToken":true}
-[2024-02-11T10:30:46.234Z] [INFO] [TOKEN] Token verification succeeded {"userId":"user_123","roles":["admin","user"]}
-[2024-02-11T10:30:46.345Z] [DEBUG] [ROUTING] Route analysis {"pathname":"/admin","isProtected":true}
-[2024-02-11T10:30:46.456Z] [INFO] [ROLE_CHECK] Role verification passed {"hasAccess":true}
-[2024-02-11T10:30:46.567Z] [DEBUG] [AUTH] Email verification check {"emailVerified":true,"isAdmin":true}
-[2024-02-11T10:30:46.678Z] [INFO] [MIDDLEWARE] Request allowed {"pathname":"/admin","userId":"user_123"}
+app-1  | [2024-02-11T10:30:46.123Z] [INFO] [MIDDLEWARE] Processing request {"pathname":"/admin","hasToken":true}
+app-1  | [2024-02-11T10:30:46.234Z] [INFO] [TOKEN] Token verification succeeded {"userId":"user_123","roles":["admin","user"]}
+app-1  | [2024-02-11T10:30:46.345Z] [DEBUG] [ROUTING] Route analysis {"pathname":"/admin","isProtected":true}
+app-1  | [2024-02-11T10:30:46.456Z] [INFO] [ROLE_CHECK] Role verification passed {"hasAccess":true}
+app-1  | [2024-02-11T10:30:46.567Z] [DEBUG] [AUTH] Email verification check {"emailVerified":true,"isAdmin":true}
+app-1  | [2024-02-11T10:30:46.678Z] [INFO] [MIDDLEWARE] Request allowed {"pathname":"/admin","userId":"user_123"}
 ```
 
-**Client logs (browser sessionStorage - download with `downloadClientLogs()`):**
+**3. Client Logs** (browser sessionStorage - download with `downloadClientLogs()`):
 ```json
 [
   {
@@ -376,17 +426,24 @@ Here's what a successful admin access looks like in the log files:
 
 3. **Start watching logs in real-time:**
    ```powershell
-   # Terminal 1
+   # Terminal 1: Middleware logs (routing, role checks)
+   docker compose logs -f app
+   
+   # Terminal 2: Auth logs (login, tokens)
    docker compose exec app tail -f /app/logs/auth.log
    
-   # Terminal 2
-   docker compose exec app tail -f /app/logs/middleware.log
+   # Terminal 3: API logs
+   docker compose exec app tail -f /app/logs/api.log
    ```
 
 4. **Login and navigate to /admin** in your browser
 
-5. **Check the log files** for any WARN or ERROR entries:
+5. **Check the logs** for any WARN or ERROR entries:
    ```powershell
+   # Check Docker logs for middleware errors
+   docker compose logs app | Select-String "WARN|ERROR"
+   
+   # Check file logs for API/auth errors
    docker compose exec app tail -n 100 /app/logs/errors.log
    docker compose exec app grep "WARN\|ERROR" /app/logs/combined.log | tail -n 20
    ```
@@ -409,12 +466,14 @@ Here's what a successful admin access looks like in the log files:
 
 ## 💡 Tips
 
-1. **Logs are saved to files** by default to reduce terminal clutter
-2. **Use specific log files** (auth.log, middleware.log) for faster debugging
-3. **Download client logs** for UI-related issues
-4. **Search logs** for your email address to track your specific flows
-5. **Check errors.log first** when debugging issues
-6. **Enable console output** temporarily by setting `DEBUG_CONSOLE=true` in .env
+1. **Middleware logs are in Docker logs** (`docker compose logs -f app`), not files
+2. **API/auth logs are in files** (`logs/auth.log`, `logs/api.log`)
+3. **Use Docker logs** to debug routing and role check issues
+4. **Use file logs** to debug authentication and API issues
+5. **Download client logs** for UI-related problems
+6. **Search both Docker and file logs** for your email to track complete flows
+7. **Check errors.log first** when debugging issues
+8. **Enable console output** by setting `DEBUG_CONSOLE=true` in .env if needed
 
 ## 🎯 Quick Debugging Commands
 
@@ -422,10 +481,19 @@ Here's what a successful admin access looks like in the log files:
 # Check if multer is installed
 docker compose exec app npm list multer
 
+# View middleware logs (routing, permissions)
+docker compose logs -f app
+docker compose logs app | Select-String "MIDDLEWARE|ROLE_CHECK"
+
+# View auth logs (login, tokens)
+docker compose exec app tail -f /app/logs/auth.log
+
 # View all logs for your email
+docker compose logs app | Select-String "your-email@example.com"
 docker compose exec app grep "your-email@example.com" /app/logs/combined.log
 
 # View recent errors
+docker compose logs app | Select-String "ERROR"
 docker compose exec app tail -n 50 /app/logs/errors.log
 
 # Check environment variables
@@ -434,10 +502,13 @@ docker compose exec app env | grep DEBUG
 # Restart after changes
 docker compose restart
 
-# View Docker logs
+# View Docker logs (includes middleware)
 docker compose logs -f app
+
+# Rebuild if needed
+docker compose build --no-cache
 ```
 
 ---
 
-**The file-based debug logging system is now active! All logs are written to the `logs/` directory.** 🎉
+**The logging system now works with Edge Runtime! Middleware logs appear in Docker logs, API logs in files.** 🎉

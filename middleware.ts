@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 import { verifyAccessTokenEdge } from './lib/auth-edge';
-import { middlewareLogger } from './lib/debug-logger';
+import { middlewareLogger } from './lib/debug-logger-edge';
 
 // Define protected routes and their required roles
 const PROTECTED_ROUTES: Record<string, { roles?: string[]; requireEmailVerified?: boolean }> = {
