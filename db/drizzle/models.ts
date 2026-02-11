@@ -15,6 +15,7 @@ export interface User {
   twoFactorSecret: string | null;
   failedLoginAttempts: number;
   lockedUntil: Date | null;
+  kycStatus: 'IDLE' | 'PENDING' | 'APPROVED' | 'REJECTED';
   createdAt: Date;
   updatedAt: Date;
 }

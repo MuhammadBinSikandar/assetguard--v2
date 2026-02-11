@@ -25,7 +25,7 @@
 
 ## Overview
 
-The KYC (Know Your Customer) module enables user identity verification before granting access to platform features (property registration, tokenization, etc.). The implementation follows a **Service-Controller-Route** architecture with strict TypeScript typing and uses **Multer** for local file storage.
+The KYC (Know Your Customer) module enables user identity verification before granting access to platform features (property registration, tokenization, etc.). The implementation follows a **Service-Controller-Route** architecture with strict TypeScript typing and uses the native **Request.formData()** API for local file storage.
 
 ### Key Features
 
@@ -66,7 +66,7 @@ The KYC (Know Your Customer) module enables user identity verification before gr
                          ▼
                   ┌──────────────┐
                   │  File System │
-                  │ (Multer)     │
+                  │ (FormData)   │
                   └──────────────┘
 ```
 
@@ -75,7 +75,7 @@ The KYC (Know Your Customer) module enables user identity verification before gr
 | Layer | File | Purpose |
 |-------|------|---------|
 | **Types** | `lib/kyc/types.ts` | DTOs, error classes, constants |
-| **Upload** | `lib/kyc/upload.ts` | Multer configuration, file handling |
+| **Upload** | `lib/kyc/upload.ts` | FormData parsing, file handling |
 | **Service** | `lib/kyc/service.ts` | Prisma DB operations, business rules |
 | **Controller** | `lib/kyc/controller.ts` | Request validation, HTTP shaping |
 | **Routes** | `app/api/kyc/**/*.ts` | Next.js route handlers (thin wrappers) |
@@ -172,20 +172,7 @@ export const UPLOAD_URL_PREFIX = '/uploads/kyc';
 
 ### 2. File Upload (`lib/kyc/upload.ts`)
 
-Uses **Multer** with custom storage configuration:
-
-```typescript
-// Filename format: user_[userId]_[timestamp]_[originalName]
-const kycStorage: StorageEngine = multer.diskStorage({
-  destination: './uploads/kyc',
-  filename(req, file, cb) {
-    const userId = req.body.userId ?? 'unknown';
-    const timestamp = Date.now();
-    const safeName = file.originalname.replace(/[^a-zA-Z0-9._-]/g, '_');
-    cb(null, `user_${userId}_${timestamp}_${safeName}`);
-  },
-});
-```
+Uses the native **Request.formData()** API with custom validation and file handling.
 
 **Key function:**
 ```typescript
@@ -663,7 +650,7 @@ assetguard--v2/
 ├── lib/
 │   ├── kyc/
 │   │   ├── types.ts               # DTOs, constants, error classes
-│   │   ├── upload.ts              # Multer configuration
+│   │   ├── upload.ts              # FormData parsing
 │   │   ├── service.ts             # Database operations
 │   │   ├── controller.ts          # HTTP handlers
 │   │   └── index.ts               # Barrel export
@@ -807,7 +794,7 @@ npx prisma generate
 
 The KYC module is a **production-ready identity verification system** with:
 
-- ✅ **Secure file upload** with Multer (local storage, ready for IPFS migration)
+- ✅ **Secure file upload** with FormData (local storage, ready for IPFS migration)
 - ✅ **Admin review workflow** with approve/reject actions
 - ✅ **Role-based access control** (admin-only endpoints)
 - ✅ **Route protection middleware** (`requireKYCApproved`)

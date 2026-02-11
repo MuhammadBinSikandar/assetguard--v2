@@ -6,7 +6,7 @@
 
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import { usePathname } from 'next/navigation';
 
 // Check if debug logging is enabled
@@ -158,7 +158,9 @@ export function useClientLogger() {
     );
   }, [pathname]);
 
-  return {
+  // Memoize the returned object to prevent re-render cascades
+  // when used as a dependency in useEffect
+  return useMemo(() => ({
     logAuthCheck: (isAuthenticated: boolean, roles?: string[]) => {
       clientLog(
         ClientLogLevel.INFO,
@@ -260,7 +262,7 @@ export function useClientLogger() {
       
       clientLog(logLevel, category, message, data);
     },
-  };
+  }), [pathname]);
 }
 
 /**

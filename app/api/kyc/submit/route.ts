@@ -7,7 +7,7 @@
  *   - idNumber (text field)
  *   - documents (file field – one or more files)
  *
- * Saves files locally via Multer-based upload handler, persists the
+ * Saves files locally via the FormData upload handler, persists the
  * KYC record, and sets the user's kycStatus to PENDING.
  */
 

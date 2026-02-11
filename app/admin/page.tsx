@@ -4,7 +4,7 @@ import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar"
 import { useIsMobile } from "@/hooks/use-mobile"
-import { useClientLogger } from "@/hooks/useClientLogger"
+import { useAppSelector } from "@/store/redux/store"
 import { AdminSidebar } from "@/components/admin/admin-sidebar"
 import { AdminTopBar } from "@/components/admin/admin-topbar"
 import { Card, CardContent } from "@/components/ui/card"
@@ -15,7 +15,14 @@ import Link from "next/link"
 export default function AdminPanel() {
     const isMobile = useIsMobile()
     const router = useRouter()
-    const logger = useClientLogger()
+
+    // Read user state from Redux (already populated by KYCPromptProvider's useAuth)
+    const user = useAppSelector((state) => state.user.user)
+    const isAuthenticated = useAppSelector((state) => state.user.isAuthenticated)
+    const authLoading = useAppSelector((state) => state.user.loading)
+    const initialFetchDone = useAppSelector((state) => state.user._initialFetchDone)
+
+    const isAdmin = user?.roles?.includes('admin') ?? false
 
     const [stats, setStats] = useState({
         pendingKYC: 0,
@@ -25,92 +32,43 @@ export default function AdminPanel() {
         loading: true,
     })
 
-    const [authState, setAuthState] = useState({
-        loading: true,
-        authenticated: false,
-        isAdmin: false,
-        user: null as any,
-    })
-
+    // Redirect if not authenticated or not admin (only after initial fetch completes)
     useEffect(() => {
-        logger.logComponentMount('AdminPanel');
-        
-        async function checkAuth() {
-            logger.logApiCall('GET', '/api/auth/me');
-            
-            try {
-                const response = await fetch('/api/auth/me');
-                const data = await response.json();
-                
-                logger.logApiResponse('GET', '/api/auth/me', response.status, data.success, data);
-                
-                if (!data.success || !data.data?.user) {
-                    logger.logAuthCheck(false);
-                    logger.logRedirect('/admin', '/login', 'Not authenticated');
-                    router.push('/login?next=/admin');
-                    return;
-                }
+        if (authLoading || !initialFetchDone) return // Still loading
 
-                const user = data.data.user;
-                const isAdmin = user.roles?.includes('admin');
-                
-                logger.logAuthCheck(true, user.roles);
-                logger.logRoleCheck(['admin'], user.roles || [], isAdmin);
-
-                if (!isAdmin) {
-                    logger.logRedirect('/admin', '/dashboard', 'Not an admin');
-                    router.push('/dashboard?error=unauthorized');
-                    return;
-                }
-
-                setAuthState({
-                    loading: false,
-                    authenticated: true,
-                    isAdmin: true,
-                    user,
-                });
-            } catch (error) {
-                logger.logError('Failed to check auth', { error: error instanceof Error ? error.message : 'Unknown error' });
-                logger.logRedirect('/admin', '/login', 'Auth check failed');
-                router.push('/login?next=/admin');
-            }
+        if (!isAuthenticated || !user) {
+            router.push('/login?next=/admin')
+            return
         }
 
-        checkAuth();
-    }, [router, logger]);
+        if (!isAdmin) {
+            router.push('/dashboard?error=unauthorized')
+            return
+        }
 
-    useEffect(() => {
-        if (!authState.loading && authState.authenticated && authState.isAdmin) {
-            async function fetchStats() {
-                logger.logApiCall('GET', '/api/kyc/review');
-                
-                try {
-                    // Fetch pending KYC count
-                    const res = await fetch("/api/kyc/review?status=PENDING&limit=1")
-                    const json = await res.json()
-                    
-                    logger.logApiResponse('GET', '/api/kyc/review', res.status, json.success, json);
-                    
-                    if (json.success) {
-                        setStats((prev) => ({
-                            ...prev,
-                            pendingKYC: json.meta.total,
-                            loading: false,
-                        }))
-                    } else {
-                        setStats((prev) => ({ ...prev, loading: false }))
-                    }
-                } catch (error) {
-                    logger.logError('Failed to fetch stats', { error: error instanceof Error ? error.message : 'Unknown error' });
+        // Auth confirmed — fetch stats
+        async function fetchStats() {
+            try {
+                const res = await fetch("/api/kyc/review?status=PENDING&limit=1")
+                const json = await res.json()
+                if (json.success) {
+                    setStats((prev) => ({
+                        ...prev,
+                        pendingKYC: json.meta.total,
+                        loading: false,
+                    }))
+                } else {
                     setStats((prev) => ({ ...prev, loading: false }))
                 }
+            } catch {
+                setStats((prev) => ({ ...prev, loading: false }))
             }
-            fetchStats()
         }
-    }, [authState, logger])
+        fetchStats()
+    }, [authLoading, initialFetchDone, isAuthenticated, isAdmin, user, router])
 
     // Show loading state while checking auth
-    if (authState.loading) {
+    if (authLoading || !initialFetchDone || !isAuthenticated || !isAdmin) {
         return (
             <div className="flex h-screen items-center justify-center">
                 <Loader2 className="h-8 w-8 animate-spin" />
@@ -119,7 +77,7 @@ export default function AdminPanel() {
     }
 
     // Don't render admin panel if not authenticated or not admin
-    if (!authState.authenticated || !authState.isAdmin) {
+    if (!isAuthenticated || !isAdmin) {
         return null;
     }
 

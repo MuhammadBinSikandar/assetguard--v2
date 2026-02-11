@@ -11,6 +11,7 @@ export type PersonalInfo = {
   last: string
   dob: string
   nationality: string
+  idNumber: string
   address: { street: string; city: string; state?: string; zip?: string; country: string }
   phone: { code: string; number: string; verified?: boolean }
 }
@@ -37,6 +38,7 @@ export function PersonalStep({
       last: "",
       dob: "",
       nationality: "",
+      idNumber: "",
       address: { street: "", city: "", state: "", zip: "", country: "" },
       phone: { code: "+1", number: "", verified: false },
     },
@@ -50,6 +52,7 @@ export function PersonalStep({
       v.last &&
       v.dob &&
       v.nationality &&
+      v.idNumber &&
       v.address.street &&
       v.address.city &&
       v.address.country &&
@@ -136,7 +139,7 @@ export function PersonalStep({
             Date of Birth
           </Label>
         </div>
-        <div className="relative md:col-span-2">
+        <div className="relative">
           <Input
             value={v.nationality}
             onChange={(e) => setV({ ...v, nationality: e.target.value })}
@@ -150,6 +153,22 @@ export function PersonalStep({
             className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 bg-slate-900/0 px-1 text-slate-400 transition-all peer-focus:top-2.5 peer-focus:-translate-y-1/2 peer-focus:text-xs peer-data-[has-value=true]:top-2.5 peer-data-[has-value=true]:-translate-y-1/2 peer-data-[has-value=true]:text-xs"
           >
             Nationality
+          </Label>
+        </div>
+        <div className="relative">
+          <Input
+            value={v.idNumber}
+            onChange={(e) => setV({ ...v, idNumber: e.target.value })}
+            className={cn(inputBase)}
+            placeholder=" "
+            id="idNumber"
+            data-has-value={Boolean(v.idNumber)}
+          />
+          <Label
+            htmlFor="idNumber"
+            className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 bg-slate-900/0 px-1 text-slate-400 transition-all peer-focus:top-2.5 peer-focus:-translate-y-1/2 peer-focus:text-xs peer-data-[has-value=true]:top-2.5 peer-data-[has-value=true]:-translate-y-1/2 peer-data-[has-value=true]:text-xs"
+          >
+            ID / Passport Number
           </Label>
         </div>
       </div>

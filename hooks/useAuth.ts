@@ -41,6 +41,8 @@ export function useAuth() {
   const refreshTimerRef = useRef<NodeJS.Timeout | null>(null);
   // Track if component is mounted to prevent state updates after unmount
   const isMountedRef = useRef(true);
+  // Track if initial profile fetch has been fired (prevents duplicates across re-renders)
+  const hasFetchedRef = useRef(false);
 
   /**
    * Clean up auto-refresh timer
@@ -53,13 +55,14 @@ export function useAuth() {
   }, []);
 
   /**
-   * Initialize auth on mount
+   * Initialize auth on mount – runs ONCE.
+   * Does NOT depend on user/loading to avoid re-render cascades.
    */
   useEffect(() => {
     isMountedRef.current = true;
-    
-    // Fetch user profile if not already loaded
-    if (!user && !loading) {
+
+    if (!hasFetchedRef.current) {
+      hasFetchedRef.current = true;
       dispatch(fetchUserProfile());
     }
 
@@ -67,7 +70,7 @@ export function useAuth() {
       isMountedRef.current = false;
       cleanupAutoRefresh();
     };
-  }, [user, loading, dispatch, cleanupAutoRefresh]);
+  }, [dispatch, cleanupAutoRefresh]);
 
   /**
    * Set up auto-refresh timer when session exists

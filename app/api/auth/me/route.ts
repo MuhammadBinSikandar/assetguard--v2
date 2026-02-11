@@ -31,6 +31,7 @@ export async function GET(request: NextRequest) {
         roles: true,
         emailVerified: true,
         twoFactorEnabled: true,
+        kycStatus: true,
         createdAt: true,
         updatedAt: true,
       },

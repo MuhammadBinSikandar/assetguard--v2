@@ -6,6 +6,8 @@ export interface UserState {
   isAuthenticated: boolean;
   loading: boolean;
   error: string | null;
+  /** Set after the first fetchUserProfile completes (success or failure). Prevents re-fetches. Reset on clearUser. */
+  _initialFetchDone: boolean;
 }
 
 const initialState: UserState = {
@@ -13,6 +15,7 @@ const initialState: UserState = {
   isAuthenticated: false,
   loading: false,
   error: null,
+  _initialFetchDone: false,
 };
 
 /**
@@ -40,6 +43,15 @@ export const fetchUserProfile = createAsyncThunk(
         error instanceof Error ? error.message : 'Unknown error'
       );
     }
+  },
+  {
+    // Prevent duplicate in-flight requests AND re-fetches after initial load
+    condition: (_, { getState }) => {
+      const { user } = getState() as { user: UserState };
+      if (user.loading) return false;          // Already in-flight
+      if (user._initialFetchDone) return false; // Already fetched once
+      return true;
+    },
   }
 );
 
@@ -56,6 +68,7 @@ const userSlice = createSlice({
       state.user = null;
       state.isAuthenticated = false;
       state.error = null;
+      state._initialFetchDone = false; // Allow re-fetch after logout
     },
     setLoading: (state, action: PayloadAction<boolean>) => {
       state.loading = action.payload;
@@ -77,6 +90,7 @@ const userSlice = createSlice({
       })
       .addCase(fetchUserProfile.fulfilled, (state, action) => {
         state.loading = false;
+        state._initialFetchDone = true;
         if (action.payload) {
           state.user = action.payload;
           state.isAuthenticated = true;
@@ -87,6 +101,7 @@ const userSlice = createSlice({
       })
       .addCase(fetchUserProfile.rejected, (state, action) => {
         state.loading = false;
+        state._initialFetchDone = true;
         state.error = action.payload as string;
         state.user = null;
         state.isAuthenticated = false;
