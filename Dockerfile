@@ -9,7 +9,7 @@ WORKDIR /app
 COPY package.json package-lock.json* ./
 # Prisma schema is needed for postinstall (prisma generate)
 COPY prisma ./prisma
-RUN npm install
+RUN npm install --legacy-peer-deps
 
 # Copy source
 COPY . .
