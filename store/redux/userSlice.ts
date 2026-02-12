@@ -125,3 +125,7 @@ export const selectUserRoles = (state: { user: UserState }) =>
   state.user.user?.roles || [];
 export const selectHasRole = (state: { user: UserState }, role: string) =>
   state.user.user?.roles.includes(role) || false;
+
+/** True once the initial /api/auth/me check has resolved (success or failure). */
+export const selectIsHydrated = (state: { user: UserState }) =>
+  state.user._initialFetchDone;
