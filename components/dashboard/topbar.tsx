@@ -16,10 +16,13 @@ import { Badge } from "@/components/ui/badge"
 import { Bell, ShieldCheck } from "lucide-react"
 import { useAuth } from "@/hooks/useAuth"
 import { useRouter } from "next/navigation"
+import { useAppSelector } from "@/store/redux/store"
+import { Skeleton } from "@/components/ui/skeleton"
 
 export function TopBar() {
   const { user, logout } = useAuth()
   const router = useRouter()
+  const isHydrated = useAppSelector((state) => state.user._initialFetchDone)
   const [recent, setRecent] = React.useState<string[]>([
     "Dubai Marina apartments",
     "Cap rate > 6%",
@@ -71,6 +74,12 @@ export function TopBar() {
         </Button>
 
         {/* Profile dropdown */}
+        {!isHydrated ? (
+          <div className="flex items-center gap-2">
+            <Skeleton className="h-7 w-7 rounded-full" />
+            <Skeleton className="hidden sm:block h-4 w-20" />
+          </div>
+        ) : (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="ghost" className="gap-2">
@@ -120,6 +129,7 @@ export function TopBar() {
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
+        )}
       </div>
     </header>
   )
