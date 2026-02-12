@@ -1,141 +1,194 @@
 "use client"
 
-import { useState, Fragment } from "react"
+import { useState, useEffect, useCallback, Fragment } from "react"
+import { useConnection, useWallet } from "@solana/wallet-adapter-react"
+import { PublicKey } from "@solana/web3.js"
+import { TOKEN_PROGRAM_ID, TOKEN_2022_PROGRAM_ID } from "@solana/spl-token"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { ChevronDown, ChevronRight, ShieldCheck } from "lucide-react"
+import { Skeleton } from "@/components/ui/skeleton"
+import { ChevronDown, ChevronRight, RefreshCw, Coins, ExternalLink } from "lucide-react"
 
-type Holding = {
+interface TokenAccount {
   id: string
-  token: string
-  property: string
-  verified: boolean
-  qty: number
-  valueUsd: number
+  mint: string
+  symbol: string
+  balance: number
+  decimals: number
+  uiAmount: string
+  programId: string
 }
 
-const holdings: Holding[] = [
-  {
-    id: "h1",
-    token: "AGT-001",
-    property: "Marina View Residence",
-    verified: true,
-    qty: 250,
-    valueUsd: 12500,
-  },
-  {
-    id: "h2",
-    token: "AGT-014",
-    property: "Downtown Offices A",
-    verified: true,
-    qty: 120,
-    valueUsd: 8400,
-  },
-  {
-    id: "h3",
-    token: "AGT-020",
-    property: "Coastal Land Plot",
-    verified: false,
-    qty: 75,
-    valueUsd: 3630,
-  },
-]
+interface TokenHoldingsProps {
+  walletAddress?: string | null
+}
 
-export function TokenHoldings() {
+export function TokenHoldings({ walletAddress }: TokenHoldingsProps) {
+  const { connection } = useConnection()
+  const { publicKey } = useWallet()
+  const [holdings, setHoldings] = useState<TokenAccount[]>([])
+  const [loading, setLoading] = useState(true)
   const [openId, setOpenId] = useState<string | null>(null)
+
+  const owner = publicKey ?? (walletAddress ? new PublicKey(walletAddress) : null)
+  const network = process.env.NEXT_PUBLIC_SOLANA_NETWORK || "devnet"
+  const explorerClusterQuery = network === "mainnet-beta" ? "" : `?cluster=${network}`
+
+  const fetchTokens = useCallback(async () => {
+    if (!owner) { setLoading(false); return }
+
+    try {
+      setLoading(true)
+
+      // Fetch from both token programs in parallel
+      const [splAccounts, token2022Accounts] = await Promise.all([
+        connection.getParsedTokenAccountsByOwner(owner, { programId: TOKEN_PROGRAM_ID }),
+        connection.getParsedTokenAccountsByOwner(owner, { programId: TOKEN_2022_PROGRAM_ID }),
+      ])
+
+      const allAccounts = [
+        ...splAccounts.value.map((a) => ({ ...a, programLabel: "SPL Token" })),
+        ...token2022Accounts.value.map((a) => ({ ...a, programLabel: "Token-2022" })),
+      ]
+
+      const tokens: TokenAccount[] = allAccounts
+        .map((ta, i) => {
+          const info = ta.account.data.parsed?.info
+          if (!info) return null
+
+          const amount = Number(info.tokenAmount?.uiAmount ?? 0)
+          if (amount <= 0) return null
+
+          return {
+            id: `tk-${i}`,
+            mint: info.mint as string,
+            symbol: ta.programLabel,
+            balance: amount,
+            decimals: info.tokenAmount?.decimals ?? 0,
+            uiAmount: info.tokenAmount?.uiAmountString ?? "0",
+            programId: ta.programLabel,
+          }
+        })
+        .filter((t): t is TokenAccount => t !== null)
+
+      setHoldings(tokens)
+    } catch (err) {
+      console.error("Failed to fetch tokens:", err)
+    } finally {
+      setLoading(false)
+    }
+  }, [connection, owner])
+
+  useEffect(() => { fetchTokens() }, [fetchTokens])
+
+  if (loading) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Token Holdings</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <Skeleton key={i} className="h-12 w-full" />
+          ))}
+        </CardContent>
+      </Card>
+    )
+  }
 
   return (
     <Card>
-      <CardHeader>
+      <CardHeader className="flex flex-row items-center justify-between">
         <CardTitle className="text-pretty">Token Holdings</CardTitle>
+        <Button variant="ghost" size="icon" onClick={fetchTokens} title="Refresh">
+          <RefreshCw className="h-4 w-4" />
+        </Button>
       </CardHeader>
       <CardContent>
-        <div className="relative w-full overflow-x-auto">
-          <Table className="min-w-[720px]">
-            <TableHeader>
-              <TableRow>
-                <TableHead />
-                <TableHead>Token</TableHead>
-                <TableHead>Property</TableHead>
-                <TableHead className="text-right">Quantity</TableHead>
-                <TableHead className="text-right">Current Value</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {holdings.map((h) => {
-                const open = openId === h.id
-                return (
-                  <Fragment key={h.id}>
-                    <TableRow data-state={open ? "open" : "closed"}>
-                      <TableCell className="w-8">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          aria-label={open ? "Collapse" : "Expand"}
-                          aria-expanded={open}
-                          aria-controls={`details-${h.id}`}
-                          onClick={() => setOpenId(open ? null : h.id)}
-                        >
-                          {open ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-                        </Button>
-                      </TableCell>
-                      <TableCell className="font-medium">
-                        <div className="inline-flex items-center gap-2">
-                          {h.token}
-                          {h.verified && (
-                            <Badge variant="secondary" className="inline-flex items-center gap-1">
-                              <ShieldCheck className="h-3.5 w-3.5" />
-                              Verified
-                            </Badge>
-                          )}
-                        </div>
-                      </TableCell>
-                      <TableCell>{h.property}</TableCell>
-                      <TableCell className="text-right">{h.qty.toLocaleString()}</TableCell>
-                      <TableCell className="text-right">${h.valueUsd.toLocaleString()}</TableCell>
-                      <TableCell className="text-right">
-                        <Button variant="secondary" size="sm">
-                          Sell Tokens
-                        </Button>
-                      </TableCell>
-                    </TableRow>
+        {holdings.length === 0 ? (
+          <div className="py-8 text-center space-y-2">
+            <Coins className="mx-auto h-8 w-8 text-muted-foreground" />
+            <p className="text-sm text-muted-foreground">No tokens found in this wallet.</p>
+            <p className="text-xs text-muted-foreground">Tokens will appear here after you receive or purchase them.</p>
+          </div>
+        ) : (
+          <div className="relative w-full overflow-x-auto">
+            <Table className="min-w-[640px]">
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-8" />
+                  <TableHead>Mint Address</TableHead>
+                  <TableHead>Program</TableHead>
+                  <TableHead className="text-right">Balance</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {holdings.map((h) => {
+                  const open = openId === h.id
+                  const shortMint = `${h.mint.slice(0, 6)}...${h.mint.slice(-4)}`
 
-                    {open && (
-                      <TableRow id={`details-${h.id}`}>
-                        <TableCell colSpan={6} className="bg-muted/30 p-3">
-                          <div className="text-xs text-muted-foreground mb-2">Recent Transactions for {h.token}</div>
-                          <div className="grid grid-cols-1 gap-2 text-sm md:grid-cols-3">
-                            <div className="rounded-md border p-3">
-                              <div className="font-medium">2025-07-03</div>
-                              <div>Type: Buy</div>
-                              <div>Amount: 50</div>
-                              <div>Hash: 0xabc...123</div>
-                            </div>
-                            <div className="rounded-md border p-3">
-                              <div className="font-medium">2025-06-28</div>
-                              <div>Type: Dividend</div>
-                              <div>Amount: $42.10</div>
-                              <div>Hash: 0xdef...987</div>
-                            </div>
-                            <div className="rounded-md border p-3">
-                              <div className="font-medium">2025-06-11</div>
-                              <div>Type: Sell</div>
-                              <div>Amount: 20</div>
-                              <div>Hash: 0xaaa...555</div>
-                            </div>
-                          </div>
+                  return (
+                    <Fragment key={h.id}>
+                      <TableRow data-state={open ? "open" : "closed"}>
+                        <TableCell className="w-8">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            aria-label={open ? "Collapse" : "Expand"}
+                            aria-expanded={open}
+                            onClick={() => setOpenId(open ? null : h.id)}
+                          >
+                            {open ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+                          </Button>
+                        </TableCell>
+                        <TableCell className="font-mono text-sm">{shortMint}</TableCell>
+                        <TableCell>
+                          <Badge variant="secondary" className="text-xs">{h.programId}</Badge>
+                        </TableCell>
+                        <TableCell className="text-right font-medium">{h.uiAmount}</TableCell>
+                        <TableCell className="text-right">
+                          <Button variant="secondary" size="sm" disabled>
+                            Sell
+                          </Button>
                         </TableCell>
                       </TableRow>
-                    )}
-                  </Fragment>
-                )
-              })}
-            </TableBody>
-          </Table>
-        </div>
+
+                      {open && (
+                        <TableRow>
+                          <TableCell colSpan={5} className="bg-muted/30 p-3">
+                            <div className="grid grid-cols-1 gap-2 text-sm sm:grid-cols-2">
+                              <div>
+                                <span className="text-muted-foreground">Full Mint:</span>{" "}
+                                <span className="font-mono text-xs break-all">{h.mint}</span>
+                              </div>
+                              <div>
+                                <span className="text-muted-foreground">Decimals:</span> {h.decimals}
+                              </div>
+                              <div>
+                                <a
+                                  href={`https://explorer.solana.com/address/${h.mint}${explorerClusterQuery}`}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="inline-flex items-center gap-1 text-sky-600 hover:underline text-xs"
+                                >
+                                  <ExternalLink className="h-3 w-3" />
+                                  View on Solana Explorer
+                                </a>
+                              </div>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      )}
+                    </Fragment>
+                  )
+                })}
+              </TableBody>
+            </Table>
+          </div>
+        )}
       </CardContent>
     </Card>
   )
