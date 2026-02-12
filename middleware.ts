@@ -90,6 +90,15 @@ export async function middleware(request: NextRequest) {
     middlewareLogger.tokenVerification(false, null, pathname);
   }
 
+  // If user is already logged in and hits a guest-only page, redirect to dashboard
+  const GUEST_ONLY_ROUTES = ['/', '/login', '/signup', '/register', '/auth/register', '/forgot-password'];
+  if (user && GUEST_ONLY_ROUTES.some((route) => matchesRoute(pathname, route))) {
+    const isAdmin = user.roles.includes('admin');
+    const dest = isAdmin ? '/admin' : '/dashboard';
+    middlewareLogger.redirect(pathname, dest, 'Already authenticated');
+    return NextResponse.redirect(new URL(dest, request.url));
+  }
+
   // Find matching protected route
   let matchedRoute: { roles?: string[]; requireEmailVerified?: boolean } | null = null;
   for (const [route, config] of Object.entries(PROTECTED_ROUTES)) {
