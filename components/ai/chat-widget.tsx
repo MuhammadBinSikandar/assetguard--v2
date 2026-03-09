@@ -16,7 +16,7 @@ export function ChatWidget() {
       role: "assistant",
       ts: Date.now(),
       content:
-        "Hi! I’m AssetGuard AI. How can I help?\n\n• How to buy property fractions?\n• Check KYC status\n• Property verification process\n• Calculate ROI",
+        "Hi! I’m AssetGuard AI. How can I help?\n\n• How to buy property fractions?\n• Check KYC status\n• Property verification process\n",
     },
   ])
   const [input, setInput] = useState("")
@@ -39,7 +39,7 @@ export function ChatWidget() {
   }, [])
 
   const quick = useMemo(
-    () => ["How to buy property fractions?", "Check KYC status", "Property verification process", "Calculate ROI"],
+    () => ["How to buy property fractions?", "Check KYC status", "Property verification process"],
     [],
   )
 
