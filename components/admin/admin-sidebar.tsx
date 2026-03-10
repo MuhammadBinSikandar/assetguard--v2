@@ -52,7 +52,7 @@ export function AdminSidebar() {
                     })
                 }
             })
-            .catch(() => {})
+            .catch(() => { })
     }, [])
     return (
         <>
