@@ -1,5 +1,6 @@
 "use client"
 
+import { usePathname } from "next/navigation"
 import Link from "next/link"
 import {
   Sidebar,
@@ -46,11 +47,17 @@ const navItems = [
   { label: "Blockchain Explorer", href: "/explorer", icon: Box },
   { label: "Register Property", href: "/register/property", icon: FilePlus2 },
   { label: "Settings", href: "/settings", icon: Settings },
-  { label: "Solscan (Devnet)", href: "https://solscan.io/?cluster=devnet", icon: ExternalLink, external: true },
+  { label: "Solscan (Devnet)", href: "https://explorer.solana.com/?cluster=devnet", icon: ExternalLink, external: true },
 ]
 
 export function DashboardSidebar() {
   const { state } = useSidebar()
+  const pathname = usePathname()
+
+  const isActive = (href: string) => {
+    if (href === "/dashboard") return pathname === "/dashboard"
+    return pathname.startsWith(href)
+  }
   return (
     <>
       <Sidebar collapsible="icon" variant="sidebar" className="border-r">
@@ -78,7 +85,7 @@ export function DashboardSidebar() {
               <SidebarMenu>
                 {navItems.map((item) => (
                   <SidebarMenuItem key={item.href}>
-                    <SidebarMenuButton asChild isActive={item.href === "/dashboard"} tooltip={item.label}>
+                    <SidebarMenuButton asChild isActive={isActive(item.href)} tooltip={item.label}>
                       {item.external ? (
                         <a href={item.href} target="_blank" rel="noreferrer">
                           <item.icon />
@@ -88,7 +95,7 @@ export function DashboardSidebar() {
                         <Link href={item.href}>
                           <item.icon />
                           <span>{item.label}</span>
-                          {item.label === "Dashboard" && (
+                          {isActive(item.href) && (
                             <Badge className="ml-auto" variant="secondary" aria-hidden>
                               Active
                             </Badge>

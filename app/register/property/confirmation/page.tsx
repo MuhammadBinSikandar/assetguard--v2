@@ -3,9 +3,10 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import Link from "next/link"
 
-export default function ConfirmationPage({ searchParams }: { searchParams: { ref?: string; wallet?: string } }) {
-  const ref = searchParams.ref || "PR-2025-0001"
-  const wallet = searchParams.wallet || "9xn...D4G"
+export default async function ConfirmationPage({ searchParams }: { searchParams: Promise<{ ref?: string; wallet?: string }> }) {
+  const params = await searchParams
+  const ref = params.ref || "PR-2025-0001"
+  const wallet = params.wallet || "9xn...D4G"
   return (
     <main className="container mx-auto max-w-2xl px-4 py-10">
       <div className="mx-auto mb-6 flex h-12 w-12 items-center justify-center rounded-full bg-secondary text-secondary-foreground">
@@ -37,7 +38,7 @@ export default function ConfirmationPage({ searchParams }: { searchParams: { ref
 
       <div className="mt-6 flex items-center justify-center gap-3">
         <Button asChild>
-          <Link href="/portfolio">View My Properties</Link>
+          <Link href="/dashboard">Go to Dashboard</Link>
         </Button>
         <Button variant="outline" asChild>
           <Link href="/register/property">Register Another Property</Link>

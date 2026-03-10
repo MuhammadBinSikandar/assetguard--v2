@@ -1,5 +1,6 @@
 "use client"
 
+import { useEffect, useState } from "react"
 import Link from "next/link"
 import {
     Sidebar,
@@ -29,13 +30,30 @@ import {
     LogOut,
 } from "lucide-react"
 
-const navItems = [
+type BadgeKey = "kyc" | "properties"
+
+const navItems: { label: string; href: string; icon: typeof LayoutDashboard; badgeKey?: BadgeKey }[] = [
     { label: "Dashboard", href: "/admin", icon: LayoutDashboard },
-    { label: "KYC Approvals", href: "/admin/kyc", icon: ShieldCheck, badge: 48 },
-    { label: "Property Approvals", href: "/admin/properties", icon: Building2, badge: 23 },
+    { label: "KYC Approvals", href: "/admin/kyc", icon: ShieldCheck, badgeKey: "kyc" },
+    { label: "Property Approvals", href: "/admin/properties", icon: Building2, badgeKey: "properties" },
 ]
 
 export function AdminSidebar() {
+    const [counts, setCounts] = useState<{ kyc: number; properties: number }>({ kyc: 0, properties: 0 })
+
+    useEffect(() => {
+        fetch("/api/admin/counts", { credentials: "include" })
+            .then((res) => res.json())
+            .then((json) => {
+                if (json.success) {
+                    setCounts({
+                        kyc: json.data.pendingKyc ?? 0,
+                        properties: json.data.pendingProperties ?? 0,
+                    })
+                }
+            })
+            .catch(() => {})
+    }, [])
     return (
         <>
             <Sidebar collapsible="icon" variant="sidebar" className="border-r">
@@ -70,9 +88,9 @@ export function AdminSidebar() {
                                             <Link href={item.href}>
                                                 <item.icon />
                                                 <span>{item.label}</span>
-                                                {item.badge && (
+                                                {item.badgeKey && counts[item.badgeKey] > 0 && (
                                                     <Badge className="ml-auto" variant="secondary">
-                                                        {item.badge}
+                                                        {counts[item.badgeKey]}
                                                     </Badge>
                                                 )}
                                             </Link>

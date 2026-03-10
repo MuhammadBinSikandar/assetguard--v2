@@ -53,6 +53,7 @@ model User {
   passwordResets        PasswordResetToken[]
   auditLogs             AuditLog[]
   kycRecord             KYCRecord?
+  properties            Property[]
 
   @@index([email])
   @@index([kycStatus])
@@ -151,4 +152,117 @@ model AuditLog {
   @@index([action])
   @@index([createdAt])
   @@map("audit_logs")
+}
+
+// ── Property Enums ───────────────────────────────────────────────────────────
+
+enum PropertyStatus {
+  PENDING
+  UNDER_REVIEW
+  APPROVED
+  REJECTED
+}
+
+enum PropertyType {
+  RESIDENTIAL
+  COMMERCIAL
+  MIXED_USE
+  INDUSTRIAL
+  LAND
+}
+
+enum DocumentStatus {
+  PENDING
+  VERIFIED
+  REJECTED
+}
+
+// ── Property Models ──────────────────────────────────────────────────────────
+
+model Property {
+  id                  String         @id @default(uuid())
+  referenceId         String         @unique // PR-{YEAR}-{4-digit}, auto-generated
+
+  // Step 1 — NYC BBL
+  borough             String
+  block               String
+  lot                 String
+
+  // Step 2 — Property Details
+  propertyAddress     String
+  ownerName           String
+  propertyType        PropertyType
+  taxClass            String
+
+  // Building Information
+  yearBuilt           Int?
+  stories             Int?
+  totalAreaSqFt       Float?
+  commercialUnits     Int?           @default(0)
+  residentialUnits    Int?           @default(0)
+
+  // Land Information
+  frontage            Float?
+  depth               Float?
+  landAreaSqFt        Float?
+
+  // Valuation
+  estimatedPriceUSD   Float
+
+  // Step 4 — Wallet (ALWAYS read from authenticated session, never from client)
+  walletAddress       String
+  blockchainNetwork   String         @default("solana-devnet")
+  tokenSymbol         String         @default("AG")
+
+  // Status & Audit
+  status              PropertyStatus @default(PENDING)
+  adminNotes          String?
+  reviewedBy          String?        // Admin User.id
+  reviewedAt          DateTime?
+  submittedAt         DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+
+  // Relations
+  owner               User           @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  ownerId             String
+  documents           PropertyDocument[]
+  statusHistory       PropertyStatusHistory[]
+
+  @@unique([borough, block, lot]) // Prevent duplicate BBL registration
+  @@index([ownerId])
+  @@index([status])
+  @@index([referenceId])
+  @@map("properties")
+}
+
+model PropertyDocument {
+  id            String         @id @default(uuid())
+  property      Property       @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  propertyId    String
+  documentType  String         // "title_deed"
+  fileName      String
+  fileUrl       String         // /uploads/properties/{propertyId}/filename.ext
+  mimeType      String?
+  fileSizeBytes Int?
+  status        DocumentStatus @default(PENDING)
+  uploadedAt    DateTime       @default(now())
+  verifiedAt    DateTime?
+  verifiedBy    String?        // Admin User.id
+
+  @@index([propertyId])
+  @@map("property_documents")
+}
+
+model PropertyStatusHistory {
+  id          String          @id @default(uuid())
+  property    Property        @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  propertyId  String
+  fromStatus  PropertyStatus?
+  toStatus    PropertyStatus
+  changedBy   String          // User.id
+  reason      String?
+  createdAt   DateTime        @default(now())
+
+  @@index([propertyId])
+  @@map("property_status_history")
 }
