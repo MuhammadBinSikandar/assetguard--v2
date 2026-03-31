@@ -42,12 +42,12 @@ const navItems = [
   { label: "My Portfolio", href: "/portfolio", icon: Briefcase },
   { label: "My Listings", href: "/listings", icon: Store },
   { label: "Investment Opportunities", href: "/opportunities", icon: Box },
-  { label: "Transactions", href: "/transactions", icon: Receipt },
+  // { label: "Transactions", href: "/transactions", icon: Receipt },
   { label: "Analytics", href: "/analytics", icon: BarChart3 },
-  { label: "Blockchain Explorer", href: "/explorer", icon: Box },
+  // { label: "Blockchain Explorer", href: "/explorer", icon: Box },
   { label: "Register Property", href: "/register/property", icon: FilePlus2 },
   { label: "Settings", href: "/settings", icon: Settings },
-  { label: "Solscan (Devnet)", href: "https://explorer.solana.com/?cluster=devnet", icon: ExternalLink, external: true },
+  { label: "Blockchain Explorer", href: "https://explorer.solana.com/?cluster=devnet", icon: ExternalLink, external: true },
 ]
 
 export function DashboardSidebar() {
