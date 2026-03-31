@@ -12,9 +12,8 @@
  *   npx tsx scripts/create-admin.ts admin@assetguard.io
  */
 
-import { PrismaClient, Role, KycStatus } from '@prisma/client';
-
-const prisma = new PrismaClient();
+import { Role, KycStatus } from '@prisma/client';
+import prisma from '../db/prismaClient';
 
 async function main() {
   const email = process.argv[2];

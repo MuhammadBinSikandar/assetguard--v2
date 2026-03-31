@@ -1,4 +1,5 @@
 import { PrismaClient } from '@prisma/client';
+import { PrismaNeon } from '@prisma/adapter-neon';
 
 /**
  * Prisma Client Singleton
@@ -11,7 +12,15 @@ declare global {
 }
 
 const prismaClientSingleton = () => {
+  const datasourceUrl = process.env.DATABASE_URL;
+  if (!datasourceUrl) {
+    throw new Error('DATABASE_URL is not set for Prisma');
+  }
+
+  const adapter = new PrismaNeon(datasourceUrl);
+
   return new PrismaClient({
+    adapter,
     log: process.env.NODE_ENV === 'development' ? ['error', 'warn'] : ['error'],
   });
 };

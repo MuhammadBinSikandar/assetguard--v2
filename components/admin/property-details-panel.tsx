@@ -23,11 +23,14 @@ import {
     Loader2,
     Download,
     Eye,
+    Coins,
+    ExternalLink,
 } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
+import { Input } from "@/components/ui/input"
 import type { PropertyApplication } from "@/components/admin/property-approvals-tab"
 
-type ModalType = "approve" | "reject" | "preview" | null
+type ModalType = "approve" | "reject" | "preview" | "mint" | null
 
 interface PropertyDetail {
     id: string
@@ -53,6 +56,11 @@ interface PropertyDetail {
     adminNotes: string | null
     submittedAt: string
     reviewedAt: string | null
+    // Minting fields
+    mintAddress: string | null
+    mintSignature: string | null
+    mintedAt: string | null
+    tokenSupply: number | null
     documents: {
         id: string
         documentType: string
@@ -97,6 +105,14 @@ export function PropertyDetailsPanel({
     const [previewDoc, setPreviewDoc] = useState<{ url: string; name: string; mimeType: string } | null>(null)
     const [detail, setDetail] = useState<PropertyDetail | null>(null)
     const [detailLoading, setDetailLoading] = useState(true)
+    // Minting state
+    const [tokenSupply, setTokenSupply] = useState<string>("1000")
+    const [mintResult, setMintResult] = useState<{
+        mintAddress: string
+        signature: string
+        explorerUrl: string
+        txUrl: string
+    } | null>(null)
 
     useEffect(() => {
         let cancelled = false
@@ -162,6 +178,53 @@ export function PropertyDetailsPanel({
             }
         } catch {
             toast({ title: "Error", description: "Network error.", variant: "destructive" })
+        } finally {
+            setActionLoading(false)
+        }
+    }
+
+    const handleMint = async () => {
+        if (!detail) return
+        
+        const supply = parseInt(tokenSupply, 10)
+        if (isNaN(supply) || supply <= 0) {
+            toast({ title: "Error", description: "Please enter a valid token supply.", variant: "destructive" })
+            return
+        }
+
+        setActionLoading(true)
+        setMintResult(null)
+        try {
+            const res = await fetch("/api/admin/mint-property", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                credentials: "include",
+                body: JSON.stringify({
+                    propertyId: detail.id,
+                    userWalletAddress: detail.walletAddress,
+                    totalValuation: detail.estimatedPriceUSD,
+                    tokenSupply: supply,
+                }),
+            })
+            const json = await res.json()
+            if (res.ok && json.success) {
+                setMintResult({
+                    mintAddress: json.data.mintAddress,
+                    signature: json.data.signature,
+                    explorerUrl: json.data.explorerUrl,
+                    txUrl: json.data.txUrl,
+                })
+                toast({ 
+                    title: "Tokens Minted Successfully!", 
+                    description: `${supply.toLocaleString()} AG tokens created for ${property.propertyAddress}`,
+                })
+                onPropertyUpdated?.()
+            } else {
+                toast({ title: "Minting Failed", description: json.message || "Failed to mint tokens.", variant: "destructive" })
+            }
+        } catch (err) {
+            console.error("Minting error:", err)
+            toast({ title: "Error", description: "Network error during minting.", variant: "destructive" })
         } finally {
             setActionLoading(false)
         }
@@ -446,6 +509,81 @@ export function PropertyDetailsPanel({
                                     </Button>
                                 </div>
                             )}
+
+                            {/* Minting Section - show for APPROVED properties */}
+                            {detail.status === "APPROVED" && (
+                                <>
+                                    <Separator />
+                                    <div className="space-y-3">
+                                        <div className="flex items-center gap-2 text-sm font-semibold">
+                                            <Coins className="h-4 w-4" />
+                                            Token Minting
+                                        </div>
+                                        {detail.mintAddress ? (
+                                            // Already minted - show token info
+                                            <div className="space-y-2 text-sm">
+                                                <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 rounded-lg">
+                                                    <div className="flex items-center gap-2 text-emerald-700 dark:text-emerald-400 font-medium mb-2">
+                                                        <CheckCircle2 className="h-4 w-4" />
+                                                        Tokens Minted
+                                                    </div>
+                                                    <div className="space-y-1 text-xs">
+                                                        <div className="flex justify-between">
+                                                            <span className="text-muted-foreground">Supply:</span>
+                                                            <span className="font-medium">{detail.tokenSupply?.toLocaleString()} AG</span>
+                                                        </div>
+                                                        <div className="flex justify-between">
+                                                            <span className="text-muted-foreground">Minted:</span>
+                                                            <span className="font-medium">
+                                                                {detail.mintedAt ? new Date(detail.mintedAt).toLocaleDateString() : 'N/A'}
+                                                            </span>
+                                                        </div>
+                                                        <div className="flex justify-between items-center">
+                                                            <span className="text-muted-foreground">Mint Address:</span>
+                                                            <a 
+                                                                href={`https://explorer.solana.com/address/${detail.mintAddress}?cluster=devnet`}
+                                                                target="_blank"
+                                                                rel="noopener noreferrer"
+                                                                className="font-mono text-primary hover:underline flex items-center gap-1"
+                                                            >
+                                                                {detail.mintAddress.slice(0, 6)}...{detail.mintAddress.slice(-4)}
+                                                                <ExternalLink className="h-3 w-3" />
+                                                            </a>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        ) : (
+                                            // Not minted yet - show mint button
+                                            <div className="space-y-3">
+                                                <p className="text-xs text-muted-foreground">
+                                                    This property is approved and ready for tokenization. 
+                                                    Mint tokens to distribute ownership shares to the property owner.
+                                                </p>
+                                                <div className="p-3 bg-muted rounded-lg space-y-2 text-xs">
+                                                    <div className="flex justify-between">
+                                                        <span className="text-muted-foreground">Valuation:</span>
+                                                        <span className="font-medium">{formatPrice(detail.estimatedPriceUSD)}</span>
+                                                    </div>
+                                                    <div className="flex justify-between">
+                                                        <span className="text-muted-foreground">Owner Wallet:</span>
+                                                        <span className="font-mono">
+                                                            {detail.walletAddress.slice(0, 6)}...{detail.walletAddress.slice(-4)}
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                                <Button 
+                                                    className="w-full bg-violet-600 hover:bg-violet-700"
+                                                    onClick={() => setActiveModal("mint")}
+                                                >
+                                                    <Coins className="mr-2 h-4 w-4" />
+                                                    Mint Property Tokens
+                                                </Button>
+                                            </div>
+                                        )}
+                                    </div>
+                                </>
+                            )}
                         </>
                     )}
                 </CardContent>
@@ -541,6 +679,141 @@ export function PropertyDetailsPanel({
                             Close
                         </Button>
                     </DialogFooter>
+                </DialogContent>
+            </Dialog>
+
+            {/* Mint Tokens Modal */}
+            <Dialog open={activeModal === "mint"} onOpenChange={() => { setActiveModal(null); setMintResult(null) }}>
+                <DialogContent className="sm:max-w-md">
+                    <DialogHeader>
+                        <DialogTitle className="flex items-center gap-2">
+                            <Coins className="h-5 w-5" />
+                            Mint Property Tokens
+                        </DialogTitle>
+                        <DialogDescription>
+                            Create Token-2022 tokens for this property on Solana Devnet.
+                        </DialogDescription>
+                    </DialogHeader>
+                    
+                    {mintResult ? (
+                        // Success state
+                        <div className="space-y-4">
+                            <div className="p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-lg">
+                                <div className="flex items-center gap-2 text-emerald-700 dark:text-emerald-400 font-medium mb-3">
+                                    <CheckCircle2 className="h-5 w-5" />
+                                    Tokens Minted Successfully!
+                                </div>
+                                <div className="space-y-2 text-sm">
+                                    <div>
+                                        <span className="text-muted-foreground">Mint Address:</span>
+                                        <p className="font-mono text-xs break-all mt-1">{mintResult.mintAddress}</p>
+                                    </div>
+                                    <div>
+                                        <span className="text-muted-foreground">Transaction:</span>
+                                        <p className="font-mono text-xs break-all mt-1">{mintResult.signature}</p>
+                                    </div>
+                                </div>
+                            </div>
+                            <div className="flex gap-2">
+                                <a 
+                                    href={mintResult.explorerUrl} 
+                                    target="_blank" 
+                                    rel="noopener noreferrer"
+                                    className="flex-1"
+                                >
+                                    <Button variant="outline" className="w-full text-xs">
+                                        <ExternalLink className="h-3 w-3 mr-1" />
+                                        View Token
+                                    </Button>
+                                </a>
+                                <a 
+                                    href={mintResult.txUrl} 
+                                    target="_blank" 
+                                    rel="noopener noreferrer"
+                                    className="flex-1"
+                                >
+                                    <Button variant="outline" className="w-full text-xs">
+                                        <ExternalLink className="h-3 w-3 mr-1" />
+                                        View Transaction
+                                    </Button>
+                                </a>
+                            </div>
+                            <DialogFooter>
+                                <Button onClick={() => { setActiveModal(null); setMintResult(null) }}>
+                                    Done
+                                </Button>
+                            </DialogFooter>
+                        </div>
+                    ) : (
+                        // Input state
+                        <>
+                            {detail && (
+                                <div className="space-y-4">
+                                    <div className="p-3 bg-muted rounded-lg space-y-2 text-sm">
+                                        <div className="flex justify-between">
+                                            <span className="text-muted-foreground">Property:</span>
+                                            <span className="font-medium text-right max-w-[60%]">{detail.propertyAddress}</span>
+                                        </div>
+                                        <div className="flex justify-between">
+                                            <span className="text-muted-foreground">Valuation:</span>
+                                            <span className="font-medium">{formatPrice(detail.estimatedPriceUSD)}</span>
+                                        </div>
+                                        <div className="flex justify-between">
+                                            <span className="text-muted-foreground">Owner Wallet:</span>
+                                            <span className="font-mono text-xs">
+                                                {detail.walletAddress.slice(0, 8)}...{detail.walletAddress.slice(-6)}
+                                            </span>
+                                        </div>
+                                    </div>
+
+                                    <div className="space-y-2">
+                                        <Label htmlFor="token-supply">Token Supply</Label>
+                                        <Input
+                                            id="token-supply"
+                                            type="number"
+                                            min="1"
+                                            value={tokenSupply}
+                                            onChange={(e) => setTokenSupply(e.target.value)}
+                                            placeholder="Enter total token supply"
+                                        />
+                                        <p className="text-xs text-muted-foreground">
+                                            Price per token: {formatPrice(detail.estimatedPriceUSD / (parseInt(tokenSupply) || 1))}
+                                        </p>
+                                    </div>
+
+                                    <div className="p-3 bg-yellow-500/10 border border-yellow-500/20 rounded-lg">
+                                        <p className="text-xs text-yellow-700 dark:text-yellow-400">
+                                            <strong>Note:</strong> This action is irreversible. The mint authority will be revoked 
+                                            after minting, making the token supply immutable.
+                                        </p>
+                                    </div>
+                                </div>
+                            )}
+
+                            <DialogFooter>
+                                <Button variant="outline" onClick={() => setActiveModal(null)} disabled={actionLoading}>
+                                    Cancel
+                                </Button>
+                                <Button 
+                                    onClick={handleMint} 
+                                    className="bg-violet-600 hover:bg-violet-700" 
+                                    disabled={actionLoading}
+                                >
+                                    {actionLoading ? (
+                                        <>
+                                            <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                                            Minting...
+                                        </>
+                                    ) : (
+                                        <>
+                                            <Coins className="h-4 w-4 mr-2" />
+                                            Mint Tokens
+                                        </>
+                                    )}
+                                </Button>
+                            </DialogFooter>
+                        </>
+                    )}
                 </DialogContent>
             </Dialog>
         </>
