@@ -10,9 +10,7 @@
  *   npx tsx scripts/check-auth.ts admin@assetguard.io
  */
 
-import { PrismaClient } from '@prisma/client';
-
-const prisma = new PrismaClient();
+import prisma from '../db/prismaClient';
 
 async function main() {
   const email = process.argv[2];
