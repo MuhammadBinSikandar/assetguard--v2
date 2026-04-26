@@ -30,6 +30,7 @@ export type KYCApplication = {
     userId: string
     fullName: string
     idNumber: string
+    /** Pinata CIDs (private files); admins resolve via GET /api/admin/kyc-document */
     documentUrls: string[]
     submittedAt: string
     reviewedAt: string | null
@@ -71,7 +72,9 @@ export function KYCApprovalsTab() {
                 params.set("status", statusFilter)
             }
 
-            const res = await fetch(`/api/kyc/review?${params.toString()}`)
+            const res = await fetch(`/api/kyc/review?${params.toString()}`, {
+                credentials: "include",
+            })
             const json = await res.json()
 
             if (json.success) {
@@ -103,6 +106,7 @@ export function KYCApprovalsTab() {
             try {
                 const res = await fetch("/api/kyc/review", {
                     method: "PATCH",
+                    credentials: "include",
                     headers: { "Content-Type": "application/json" },
                     body: JSON.stringify({ userId, status }),
                 })

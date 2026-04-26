@@ -25,6 +25,8 @@ import {
     Loader2,
 } from "lucide-react"
 import { PropertyDetailsPanel } from "@/components/admin/property-details-panel"
+import { AdminVerifiedPriceEditor } from "@/components/admin/admin-verified-price-editor"
+import { effectivePropertyValuationUsd } from "@/lib/property-valuation"
 
 export type PropertyApplication = {
     id: string
@@ -37,6 +39,7 @@ export type PropertyApplication = {
     status: "PENDING" | "UNDER_REVIEW" | "APPROVED" | "REJECTED"
     submittedAt: string
     estimatedPriceUSD: number
+    verifiedPriceUSD: number | null
     walletAddress: string
     documentCount: number
 }
@@ -269,9 +272,21 @@ export function PropertyApprovalsTab() {
                                                                 <span>{property.documentCount} doc(s)</span>
                                                             </div>
                                                         </div>
-                                                        <span className="font-semibold text-primary">
-                                                            {formatPrice(property.estimatedPriceUSD)}
-                                                        </span>
+                                                        <div className="text-right">
+                                                            <span className="font-semibold text-primary block">
+                                                                {formatPrice(
+                                                                    effectivePropertyValuationUsd(
+                                                                        property.estimatedPriceUSD,
+                                                                        property.verifiedPriceUSD,
+                                                                    ),
+                                                                )}
+                                                            </span>
+                                                            {property.verifiedPriceUSD != null && (
+                                                                <span className="text-[10px] text-muted-foreground">
+                                                                    Admin verified
+                                                                </span>
+                                                            )}
+                                                        </div>
                                                     </div>
 
                                                     <div className="flex items-center justify-between text-xs text-muted-foreground">
@@ -316,11 +331,25 @@ export function PropertyApprovalsTab() {
 
             {/* Right Sidebar - Details Panel */}
             {selectedProperty ? (
-                <PropertyDetailsPanel
-                    property={selectedProperty}
-                    onClose={() => setSelectedProperty(null)}
-                    onPropertyUpdated={handlePropertyUpdated}
-                />
+                <div className="space-y-4 min-w-0">
+                    <AdminVerifiedPriceEditor
+                        propertyId={selectedProperty.id}
+                        submittedPriceUSD={selectedProperty.estimatedPriceUSD}
+                        verifiedPriceUSD={selectedProperty.verifiedPriceUSD}
+                        onSaved={({ verifiedPriceUSD }) => {
+                            setSelectedProperty({
+                                ...selectedProperty,
+                                verifiedPriceUSD,
+                            })
+                            fetchProperties()
+                        }}
+                    />
+                    <PropertyDetailsPanel
+                        property={selectedProperty}
+                        onClose={() => setSelectedProperty(null)}
+                        onPropertyUpdated={handlePropertyUpdated}
+                    />
+                </div>
             ) : (
                 <Card>
                     <CardContent className="flex flex-col items-center justify-center py-16 text-center">

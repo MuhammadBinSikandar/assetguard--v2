@@ -28,6 +28,7 @@ import {
     FileText,
     BarChart3,
     LogOut,
+    Wallet,
 } from "lucide-react"
 
 type BadgeKey = "kyc" | "properties"
@@ -36,6 +37,7 @@ const navItems: { label: string; href: string; icon: typeof LayoutDashboard; bad
     { label: "Dashboard", href: "/admin", icon: LayoutDashboard },
     { label: "KYC Approvals", href: "/admin/kyc", icon: ShieldCheck, badgeKey: "kyc" },
     { label: "Property Approvals", href: "/admin/properties", icon: Building2, badgeKey: "properties" },
+    { label: "Custody & Escrow", href: "/admin/custody", icon: Wallet },
 ]
 
 export function AdminSidebar() {

@@ -25,12 +25,84 @@ import {
     Eye,
     Coins,
     ExternalLink,
+    ShieldCheck,
+    RefreshCw,
+    AlertTriangle,
 } from "lucide-react"
 import { useToast } from "@/hooks/use-toast"
-import { Input } from "@/components/ui/input"
 import type { PropertyApplication } from "@/components/admin/property-approvals-tab"
+import { formatDistanceToNow } from "date-fns"
+import { effectivePropertyValuationUsd } from "@/lib/property-valuation"
 
 type ModalType = "approve" | "reject" | "preview" | "mint" | null
+const FIXED_TOKEN_SUPPLY = 1000
+
+function isAbsoluteDocumentUrl(url: string): boolean {
+    return /^https?:\/\//i.test(url)
+}
+
+function getDocumentServeUrl(fileUrl: string): string {
+    if (isAbsoluteDocumentUrl(fileUrl)) return fileUrl
+    return `/api${fileUrl}`
+}
+
+function getDocumentDownloadUrl(fileUrl: string): string {
+    const serveUrl = getDocumentServeUrl(fileUrl)
+    if (isAbsoluteDocumentUrl(fileUrl)) return serveUrl
+    const separator = serveUrl.includes("?") ? "&" : "?"
+    return `${serveUrl}${separator}download=1`
+}
+
+type PropertyVerificationPayload = {
+    id: string
+    propertyId: string
+    scrapedAt: string | null
+    scrapeStatus: "PENDING" | "SUCCESS" | "FAILED"
+    scrapeError: string | null
+    address: string | null
+    ownerName: string | null
+    propertyType: string | null
+    taxClass: string | null
+    yearBuilt: string | null
+    numberOfStories: string | null
+    totalArea: string | null
+    residentialUnits: string | null
+    commercialUnits: string | null
+    frontage: string | null
+    landDepth: string | null
+    landArea: string | null
+    estimatedPrice: string | null
+}
+
+function normalizeCompareToken(value: string): string {
+    return value.trim().toLowerCase().replace(/\s+/g, " ")
+}
+
+function numericTokensEqual(a: string, b: string): boolean {
+    const na = parseFloat(a.replace(/[^0-9.-]/g, ""))
+    const nb = parseFloat(b.replace(/[^0-9.-]/g, ""))
+    if (Number.isNaN(na) || Number.isNaN(nb)) return false
+    return na === nb
+}
+
+/** True when both sides have text and match (case-insensitive / loose numeric). */
+function verificationValuesMatch(userDisplay: string, scraped: string | null | undefined): boolean {
+    if (scraped == null || scraped.trim() === "") return false
+    const u = userDisplay.trim()
+    const s = scraped.trim()
+    if (!u) return false
+    if (normalizeCompareToken(u) === normalizeCompareToken(s)) return true
+    if (numericTokensEqual(u, s)) return true
+    return false
+}
+
+/** True when both have values and they differ. */
+function verificationValuesMismatch(userDisplay: string, scraped: string | null | undefined): boolean {
+    if (scraped == null || scraped.trim() === "") return false
+    const u = userDisplay.trim()
+    if (!u) return false
+    return !verificationValuesMatch(userDisplay, scraped)
+}
 
 interface PropertyDetail {
     id: string
@@ -51,6 +123,7 @@ interface PropertyDetail {
     lotDepth: number | null
     landAreaSqFt: number | null
     estimatedPriceUSD: number
+    verifiedPriceUSD: number | null
     walletAddress: string
     status: string
     adminNotes: string | null
@@ -87,6 +160,7 @@ interface PropertyDetail {
         walletAddress: string | null
         kycStatus: string
     }
+    verificationData?: PropertyVerificationPayload | null
 }
 
 export function PropertyDetailsPanel({
@@ -102,17 +176,16 @@ export function PropertyDetailsPanel({
     const [activeModal, setActiveModal] = useState<ModalType>(null)
     const [rejectionReason, setRejectionReason] = useState("")
     const [actionLoading, setActionLoading] = useState(false)
-    const [previewDoc, setPreviewDoc] = useState<{ url: string; name: string; mimeType: string } | null>(null)
+    const [previewDoc, setPreviewDoc] = useState<{ url: string; downloadUrl: string; name: string; mimeType: string } | null>(null)
     const [detail, setDetail] = useState<PropertyDetail | null>(null)
     const [detailLoading, setDetailLoading] = useState(true)
-    // Minting state
-    const [tokenSupply, setTokenSupply] = useState<string>("1000")
     const [mintResult, setMintResult] = useState<{
         mintAddress: string
         signature: string
         explorerUrl: string
         txUrl: string
     } | null>(null)
+    const [rescrapeLoading, setRescrapeLoading] = useState(false)
 
     useEffect(() => {
         let cancelled = false
@@ -125,10 +198,48 @@ export function PropertyDetailsPanel({
             .catch(console.error)
             .finally(() => { if (!cancelled) setDetailLoading(false) })
         return () => { cancelled = true }
-    }, [property.id])
+    }, [property.id, property.verifiedPriceUSD])
 
     const formatPrice = (price: number) =>
         new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 0 }).format(price)
+
+    const refreshPropertyDetail = async () => {
+        try {
+            const refreshed = await fetch(`/api/admin/properties/${property.id}`, { credentials: "include" })
+            const detailJson = await refreshed.json()
+            if (detailJson.success) setDetail(detailJson.data)
+        } catch (e) {
+            console.error(e)
+        }
+    }
+
+    const handleRescrapeVerification = async () => {
+        if (!detail) return
+        setRescrapeLoading(true)
+        try {
+            const res = await fetch("/api/admin/rescrape-property", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                credentials: "include",
+                body: JSON.stringify({ propertyId: detail.id }),
+            })
+            const json = await res.json().catch(() => ({}))
+            await refreshPropertyDetail()
+            if (res.ok && json.success) {
+                toast({ title: "Verification updated", description: "Official NYC data was refreshed." })
+            } else {
+                toast({
+                    title: "Verification failed",
+                    description: typeof json.message === "string" ? json.message : "Could not scrape official data.",
+                    variant: "destructive",
+                })
+            }
+        } catch {
+            toast({ title: "Error", description: "Network error.", variant: "destructive" })
+        } finally {
+            setRescrapeLoading(false)
+        }
+    }
 
     const handleApprove = async () => {
         setActionLoading(true)
@@ -141,7 +252,28 @@ export function PropertyDetailsPanel({
             })
             const json = await res.json()
             if (res.ok && json.success) {
-                toast({ title: "Property Approved", description: `${property.propertyAddress} has been approved.` })
+                const minting = json?.data?.minting as
+                    | { attempted?: boolean; success?: boolean; message?: string }
+                    | undefined
+
+                if (minting?.attempted && minting.success) {
+                    toast({
+                        title: "Property Approved & Minted",
+                        description: `${FIXED_TOKEN_SUPPLY.toLocaleString()} AG tokens were minted for ${property.propertyAddress}.`,
+                    })
+                } else if (minting?.attempted && minting.success === false) {
+                    toast({
+                        title: "Property Approved (Mint Failed)",
+                        description: minting.message || "Property was approved, but token minting failed. Retry from the Token Minting section.",
+                        variant: "destructive",
+                    })
+                } else {
+                    toast({
+                        title: "Property Approved",
+                        description: `${property.propertyAddress} has been approved.`,
+                    })
+                }
+
                 setActiveModal(null)
                 onPropertyUpdated?.()
             } else {
@@ -185,12 +317,6 @@ export function PropertyDetailsPanel({
 
     const handleMint = async () => {
         if (!detail) return
-        
-        const supply = parseInt(tokenSupply, 10)
-        if (isNaN(supply) || supply <= 0) {
-            toast({ title: "Error", description: "Please enter a valid token supply.", variant: "destructive" })
-            return
-        }
 
         setActionLoading(true)
         setMintResult(null)
@@ -202,8 +328,6 @@ export function PropertyDetailsPanel({
                 body: JSON.stringify({
                     propertyId: detail.id,
                     userWalletAddress: detail.walletAddress,
-                    totalValuation: detail.estimatedPriceUSD,
-                    tokenSupply: supply,
                 }),
             })
             const json = await res.json()
@@ -214,9 +338,9 @@ export function PropertyDetailsPanel({
                     explorerUrl: json.data.explorerUrl,
                     txUrl: json.data.txUrl,
                 })
-                toast({ 
-                    title: "Tokens Minted Successfully!", 
-                    description: `${supply.toLocaleString()} AG tokens created for ${property.propertyAddress}`,
+                toast({
+                    title: "Tokens Minted Successfully!",
+                    description: `${FIXED_TOKEN_SUPPLY.toLocaleString()} AG tokens created for ${property.propertyAddress}`,
                 })
                 onPropertyUpdated?.()
             } else {
@@ -296,6 +420,191 @@ export function PropertyDetailsPanel({
                                         <span className="font-medium">{new Date(detail.submittedAt).toLocaleDateString()}</span>
                                     </div>
                                 </div>
+                            </div>
+
+                            {/* User vs official NYC portal */}
+                            <div className="space-y-3 rounded-lg border border-border bg-muted/30 p-3">
+                                <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                                    <div className="space-y-1">
+                                        <div className="text-sm font-semibold">Official source verification</div>
+                                        <div className="flex flex-wrap items-center gap-2">
+                                            {!detail.verificationData ? (
+                                                <Badge variant="outline" className="text-xs text-muted-foreground">
+                                                    No verification data
+                                                </Badge>
+                                            ) : detail.verificationData.scrapeStatus === "SUCCESS" ? (
+                                                <Badge className="border border-emerald-500/25 bg-emerald-500/10 text-xs text-emerald-700 dark:text-emerald-400">
+                                                    Verified
+                                                </Badge>
+                                            ) : detail.verificationData.scrapeStatus === "FAILED" ? (
+                                                <Badge className="bg-red-500/10 text-xs text-red-700 dark:text-red-400">
+                                                    Scrape Failed
+                                                </Badge>
+                                            ) : (
+                                                <Badge className="bg-amber-500/10 text-xs text-amber-800 dark:text-amber-400">
+                                                    Pending
+                                                </Badge>
+                                            )}
+                                            {detail.verificationData?.scrapedAt && (
+                                                <span className="text-xs text-muted-foreground">
+                                                    Last verified:{" "}
+                                                    {formatDistanceToNow(new Date(detail.verificationData.scrapedAt), {
+                                                        addSuffix: true,
+                                                    })}
+                                                </span>
+                                            )}
+                                        </div>
+                                        {detail.verificationData?.scrapeStatus === "FAILED" && detail.verificationData.scrapeError && (
+                                            <p className="text-xs text-destructive">{detail.verificationData.scrapeError}</p>
+                                        )}
+                                    </div>
+                                    {(!detail.verificationData ||
+                                        detail.verificationData.scrapeStatus === "FAILED" ||
+                                        detail.verificationData.scrapeStatus === "PENDING") && (
+                                        <Button
+                                            type="button"
+                                            variant="outline"
+                                            size="sm"
+                                            className="shrink-0 gap-1.5"
+                                            disabled={rescrapeLoading}
+                                            onClick={handleRescrapeVerification}
+                                        >
+                                            {rescrapeLoading ? (
+                                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                            ) : (
+                                                <RefreshCw className="h-3.5 w-3.5" />
+                                            )}
+                                            Re-run Verification
+                                        </Button>
+                                    )}
+                                </div>
+
+                                {!detail.verificationData ? (
+                                    <p className="text-xs text-muted-foreground">
+                                        No scrape has been stored for this property yet. Click Re-run Verification to fetch NYC portal data.
+                                    </p>
+                                ) : (
+                                    <div className="overflow-x-auto rounded-md border border-border bg-background/80">
+                                        <div className="grid min-w-[520px] grid-cols-[1fr_1fr_1fr] gap-0 text-xs">
+                                            <div className="flex items-center gap-1.5 border-b border-border bg-muted/50 px-2 py-2 font-semibold">
+                                                <span className="text-muted-foreground">Field</span>
+                                            </div>
+                                            <div className="flex items-center gap-1.5 border-b border-border bg-muted/50 px-2 py-2 font-semibold">
+                                                <User className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                                                User Submitted
+                                            </div>
+                                            <div className="flex items-center gap-1.5 border-b border-border bg-muted/50 px-2 py-2 font-semibold">
+                                                <ShieldCheck className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                                                Official Source
+                                            </div>
+                                            {(
+                                                [
+                                                    {
+                                                        label: "Address",
+                                                        userText: detail.propertyAddress,
+                                                        scraped: detail.verificationData.address,
+                                                    },
+                                                    {
+                                                        label: "Owner Name",
+                                                        userText: detail.ownerName,
+                                                        scraped: detail.verificationData.ownerName,
+                                                    },
+                                                    {
+                                                        label: "Property Type",
+                                                        userText: detail.propertyType,
+                                                        scraped: detail.verificationData.propertyType,
+                                                    },
+                                                    {
+                                                        label: "Year Built",
+                                                        userText:
+                                                            detail.yearBuilt != null ? String(detail.yearBuilt) : "",
+                                                        scraped: detail.verificationData.yearBuilt,
+                                                    },
+                                                    {
+                                                        label: "Total Area",
+                                                        userText:
+                                                            detail.totalAreaSqFt != null
+                                                                ? `${detail.totalAreaSqFt.toLocaleString()} sq ft`
+                                                                : "",
+                                                        scraped: detail.verificationData.totalArea,
+                                                    },
+                                                    {
+                                                        label: "Number of Stories",
+                                                        userText:
+                                                            detail.stories != null ? String(detail.stories) : "",
+                                                        scraped: detail.verificationData.numberOfStories,
+                                                    },
+                                                    {
+                                                        label: "Residential Units",
+                                                        userText:
+                                                            detail.residentialUnits != null
+                                                                ? String(detail.residentialUnits)
+                                                                : "",
+                                                        scraped: detail.verificationData.residentialUnits,
+                                                    },
+                                                    {
+                                                        label: "Commercial Units",
+                                                        userText:
+                                                            detail.commercialUnits != null
+                                                                ? String(detail.commercialUnits)
+                                                                : "",
+                                                        scraped: detail.verificationData.commercialUnits,
+                                                    },
+                                                    {
+                                                        label: "Estimated Price",
+                                                        userText: formatPrice(detail.estimatedPriceUSD),
+                                                        scraped: detail.verificationData.estimatedPrice,
+                                                    },
+                                                ] as const
+                                            ).map((row) => {
+                                                const scrapedDisplay =
+                                                    row.scraped != null && row.scraped.trim() !== ""
+                                                        ? row.scraped
+                                                        : null
+                                                const mismatch = verificationValuesMismatch(row.userText, row.scraped)
+                                                const match =
+                                                    scrapedDisplay != null &&
+                                                    verificationValuesMatch(row.userText, row.scraped)
+                                                const rowClass = mismatch
+                                                    ? "bg-amber-500/15 dark:bg-amber-500/10"
+                                                    : ""
+                                                return (
+                                                    <div key={row.label} className={`contents ${rowClass}`}>
+                                                        <div
+                                                            className={`flex items-center gap-1 border-b border-border px-2 py-2 ${rowClass}`}
+                                                        >
+                                                            <span className="text-muted-foreground">{row.label}</span>
+                                                            {mismatch && (
+                                                                <AlertTriangle
+                                                                    className="h-3.5 w-3.5 shrink-0 text-amber-600 dark:text-amber-500"
+                                                                    aria-hidden
+                                                                />
+                                                            )}
+                                                            {match && (
+                                                                <CheckCircle2
+                                                                    className="h-3.5 w-3.5 shrink-0 text-emerald-600 dark:text-emerald-500"
+                                                                    aria-hidden
+                                                                />
+                                                            )}
+                                                        </div>
+                                                        <div
+                                                            className={`border-b border-border px-2 py-2 font-medium ${rowClass}`}
+                                                        >
+                                                            {row.userText || "—"}
+                                                        </div>
+                                                        <div
+                                                            className={`border-b border-border px-2 py-2 text-muted-foreground ${rowClass}`}
+                                                        >
+                                                            {scrapedDisplay ?? (
+                                                                <span className="text-muted-foreground/70">—</span>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                )
+                                            })}
+                                        </div>
+                                    </div>
+                                )}
                             </div>
 
                             <Separator />
@@ -382,8 +691,19 @@ export function PropertyDetailsPanel({
                                 </div>
                                 <div className="space-y-2 text-sm">
                                     <div className="flex justify-between">
-                                        <span className="text-muted-foreground">Estimated Price:</span>
-                                        <span className="font-medium text-primary">{formatPrice(detail.estimatedPriceUSD)}</span>
+                                        <span className="text-muted-foreground">Owner submitted:</span>
+                                        <span className="font-medium">{formatPrice(detail.estimatedPriceUSD)}</span>
+                                    </div>
+                                    <div className="flex justify-between">
+                                        <span className="text-muted-foreground">Effective (mint / portfolio):</span>
+                                        <span className="font-medium text-primary">
+                                            {formatPrice(
+                                                effectivePropertyValuationUsd(
+                                                    detail.estimatedPriceUSD,
+                                                    detail.verifiedPriceUSD,
+                                                ),
+                                            )}
+                                        </span>
                                     </div>
                                     {detail.landAreaSqFt && (
                                         <div className="flex justify-between">
@@ -403,9 +723,11 @@ export function PropertyDetailsPanel({
                                     Documents ({detail.documents.length})
                                 </div>
                                 {detail.documents.map((doc) => {
-                                    const serveUrl = `/api${doc.fileUrl}`
-                                    const canPreview = doc.mimeType === "application/pdf" ||
-                                        doc.mimeType.startsWith("image/")
+                                    const serveUrl = getDocumentServeUrl(doc.fileUrl)
+                                    const downloadUrl = getDocumentDownloadUrl(doc.fileUrl)
+                                    const mimeType = doc.mimeType || ""
+                                    const canPreview = mimeType === "application/pdf" ||
+                                        mimeType.startsWith("image/")
                                     return (
                                         <div key={doc.id} className="p-3 border rounded-lg space-y-2">
                                             <div className="flex items-center justify-between">
@@ -429,7 +751,7 @@ export function PropertyDetailsPanel({
                                                         variant="outline"
                                                         className="text-xs h-7 flex-1"
                                                         onClick={() => {
-                                                            setPreviewDoc({ url: serveUrl, name: doc.fileName, mimeType: doc.mimeType })
+                                                            setPreviewDoc({ url: serveUrl, downloadUrl, name: doc.fileName, mimeType })
                                                             setActiveModal("preview")
                                                         }}
                                                     >
@@ -437,7 +759,7 @@ export function PropertyDetailsPanel({
                                                         Preview
                                                     </Button>
                                                 )}
-                                                <a href={`${serveUrl}?download=1`} target="_blank" rel="noopener noreferrer" className="flex-1">
+                                                <a href={downloadUrl} target="_blank" rel="noopener noreferrer" className="flex-1">
                                                     <Button size="sm" variant="outline" className="text-xs h-7 w-full">
                                                         <Download className="h-3 w-3 mr-1" />
                                                         Download
@@ -463,7 +785,7 @@ export function PropertyDetailsPanel({
                                 <div className="space-y-2">
                                     {detail.statusHistory.map((entry) => (
                                         <div key={entry.id} className="flex gap-2 text-xs">
-                                            <div className="text-muted-foreground min-w-[80px]">
+                                            <div className="text-muted-foreground min-w-20">
                                                 {new Date(entry.createdAt).toLocaleDateString()}
                                             </div>
                                             <div>
@@ -540,7 +862,7 @@ export function PropertyDetailsPanel({
                                                         </div>
                                                         <div className="flex justify-between items-center">
                                                             <span className="text-muted-foreground">Mint Address:</span>
-                                                            <a 
+                                                            <a
                                                                 href={`https://explorer.solana.com/address/${detail.mintAddress}?cluster=devnet`}
                                                                 target="_blank"
                                                                 rel="noopener noreferrer"
@@ -557,13 +879,20 @@ export function PropertyDetailsPanel({
                                             // Not minted yet - show mint button
                                             <div className="space-y-3">
                                                 <p className="text-xs text-muted-foreground">
-                                                    This property is approved and ready for tokenization. 
+                                                    This property is approved and ready for tokenization.
                                                     Mint tokens to distribute ownership shares to the property owner.
                                                 </p>
                                                 <div className="p-3 bg-muted rounded-lg space-y-2 text-xs">
                                                     <div className="flex justify-between">
                                                         <span className="text-muted-foreground">Valuation:</span>
-                                                        <span className="font-medium">{formatPrice(detail.estimatedPriceUSD)}</span>
+                                                        <span className="font-medium">
+                                                            {formatPrice(
+                                                                effectivePropertyValuationUsd(
+                                                                    detail.estimatedPriceUSD,
+                                                                    detail.verifiedPriceUSD,
+                                                                ),
+                                                            )}
+                                                        </span>
                                                     </div>
                                                     <div className="flex justify-between">
                                                         <span className="text-muted-foreground">Owner Wallet:</span>
@@ -572,7 +901,7 @@ export function PropertyDetailsPanel({
                                                         </span>
                                                     </div>
                                                 </div>
-                                                <Button 
+                                                <Button
                                                     className="w-full bg-violet-600 hover:bg-violet-700"
                                                     onClick={() => setActiveModal("mint")}
                                                 >
@@ -668,7 +997,7 @@ export function PropertyDetailsPanel({
                     </div>
                     <DialogFooter>
                         {previewDoc && (
-                            <a href={`${previewDoc.url}?download=1`} target="_blank" rel="noopener noreferrer">
+                            <a href={previewDoc.downloadUrl} target="_blank" rel="noopener noreferrer">
                                 <Button variant="outline">
                                     <Download className="h-4 w-4 mr-2" />
                                     Download
@@ -694,7 +1023,7 @@ export function PropertyDetailsPanel({
                             Create Token-2022 tokens for this property on Solana Devnet.
                         </DialogDescription>
                     </DialogHeader>
-                    
+
                     {mintResult ? (
                         // Success state
                         <div className="space-y-4">
@@ -715,9 +1044,9 @@ export function PropertyDetailsPanel({
                                 </div>
                             </div>
                             <div className="flex gap-2">
-                                <a 
-                                    href={mintResult.explorerUrl} 
-                                    target="_blank" 
+                                <a
+                                    href={mintResult.explorerUrl}
+                                    target="_blank"
                                     rel="noopener noreferrer"
                                     className="flex-1"
                                 >
@@ -726,9 +1055,9 @@ export function PropertyDetailsPanel({
                                         View Token
                                     </Button>
                                 </a>
-                                <a 
-                                    href={mintResult.txUrl} 
-                                    target="_blank" 
+                                <a
+                                    href={mintResult.txUrl}
+                                    target="_blank"
                                     rel="noopener noreferrer"
                                     className="flex-1"
                                 >
@@ -756,7 +1085,14 @@ export function PropertyDetailsPanel({
                                         </div>
                                         <div className="flex justify-between">
                                             <span className="text-muted-foreground">Valuation:</span>
-                                            <span className="font-medium">{formatPrice(detail.estimatedPriceUSD)}</span>
+                                            <span className="font-medium">
+                                                {formatPrice(
+                                                    effectivePropertyValuationUsd(
+                                                        detail.estimatedPriceUSD,
+                                                        detail.verifiedPriceUSD,
+                                                    ),
+                                                )}
+                                            </span>
                                         </div>
                                         <div className="flex justify-between">
                                             <span className="text-muted-foreground">Owner Wallet:</span>
@@ -766,25 +1102,36 @@ export function PropertyDetailsPanel({
                                         </div>
                                     </div>
 
-                                    <div className="space-y-2">
-                                        <Label htmlFor="token-supply">Token Supply</Label>
-                                        <Input
-                                            id="token-supply"
-                                            type="number"
-                                            min="1"
-                                            value={tokenSupply}
-                                            onChange={(e) => setTokenSupply(e.target.value)}
-                                            placeholder="Enter total token supply"
-                                        />
-                                        <p className="text-xs text-muted-foreground">
-                                            Price per token: {formatPrice(detail.estimatedPriceUSD / (parseInt(tokenSupply) || 1))}
+                                    <div className="p-3 bg-muted rounded-lg space-y-2 text-sm">
+                                        <div className="flex justify-between">
+                                            <span className="text-muted-foreground">Token Supply:</span>
+                                            <span className="font-medium">{FIXED_TOKEN_SUPPLY.toLocaleString()} AG</span>
+                                        </div>
+                                        <div className="flex justify-between">
+                                            <span className="text-muted-foreground">Price per token:</span>
+                                            <span className="font-medium">
+                                                {formatPrice(
+                                                    effectivePropertyValuationUsd(
+                                                        detail.estimatedPriceUSD,
+                                                        detail.verifiedPriceUSD,
+                                                    ) / FIXED_TOKEN_SUPPLY,
+                                                )}
+                                            </span>
+                                        </div>
+                                        <p className="text-xs text-muted-foreground pt-1">
+                                            Supply is fixed at 1,000 tokens for every property.
                                         </p>
                                     </div>
 
-                                    <div className="p-3 bg-yellow-500/10 border border-yellow-500/20 rounded-lg">
+                                    <div className="p-3 bg-yellow-500/10 border border-yellow-500/20 rounded-lg space-y-1.5">
                                         <p className="text-xs text-yellow-700 dark:text-yellow-400">
-                                            <strong>Note:</strong> This action is irreversible. The mint authority will be revoked 
+                                            <strong>Note:</strong> This action is irreversible. The mint authority will be revoked
                                             after minting, making the token supply immutable.
+                                        </p>
+                                        <p className="text-xs text-yellow-800/90 dark:text-yellow-200/90">
+                                            The full supply is minted to the <strong>platform custodian</strong> (admin wallet) so
+                                            marketplace sales can complete without the owner signing a token approval. Economic
+                                            ownership still follows the property owner in the app.
                                         </p>
                                     </div>
                                 </div>
@@ -794,9 +1141,9 @@ export function PropertyDetailsPanel({
                                 <Button variant="outline" onClick={() => setActiveModal(null)} disabled={actionLoading}>
                                     Cancel
                                 </Button>
-                                <Button 
-                                    onClick={handleMint} 
-                                    className="bg-violet-600 hover:bg-violet-700" 
+                                <Button
+                                    onClick={handleMint}
+                                    className="bg-violet-600 hover:bg-violet-700"
                                     disabled={actionLoading}
                                 >
                                     {actionLoading ? (
