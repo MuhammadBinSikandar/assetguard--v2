@@ -3,6 +3,29 @@ import type { NextRequest } from 'next/server';
 import { verifyAccessTokenEdge } from './lib/auth-edge';
 import { middlewareLogger } from './lib/debug-logger-edge';
 
+function appendSetCookieHeaders(source: Response, target: NextResponse): number {
+  let appended = 0;
+  const headersWithGetSetCookie = source.headers as Headers & {
+    getSetCookie?: () => string[];
+  };
+
+  if (typeof headersWithGetSetCookie.getSetCookie === 'function') {
+    for (const cookie of headersWithGetSetCookie.getSetCookie()) {
+      target.headers.append('set-cookie', cookie);
+      appended += 1;
+    }
+    return appended;
+  }
+
+  const setCookie = source.headers.get('set-cookie');
+  if (setCookie) {
+    target.headers.append('set-cookie', setCookie);
+    appended += 1;
+  }
+
+  return appended;
+}
+
 // Define protected routes and their required roles
 const PROTECTED_ROUTES: Record<string, { roles?: string[]; requireEmailVerified?: boolean }> = {
   '/admin': { roles: ['admin'], requireEmailVerified: true },
@@ -74,7 +97,7 @@ export async function middleware(request: NextRequest) {
 
   // Get access token from cookie
   const accessToken = request.cookies.get('access_token')?.value;
-  
+
   // Log middleware start
   middlewareLogger.start(pathname, !!accessToken);
 
@@ -113,6 +136,31 @@ export async function middleware(request: NextRequest) {
 
   // If route is protected and user is not authenticated
   if (matchedRoute && !user) {
+    const hasRefreshToken = !!request.cookies.get('refresh_token')?.value;
+
+    // For page navigations, try a silent refresh first so sessions persist across restarts.
+    if (hasRefreshToken && !pathname.startsWith('/api/')) {
+      const refreshResponse = await fetch(new URL('/api/auth/refresh', request.url), {
+        method: 'POST',
+        headers: {
+          cookie: request.headers.get('cookie') || '',
+          'user-agent': request.headers.get('user-agent') || '',
+          'x-forwarded-for': request.headers.get('x-forwarded-for') || '',
+          'x-real-ip': request.headers.get('x-real-ip') || '',
+        },
+      });
+
+      if (refreshResponse.ok) {
+        const retryUrl = new URL(request.url);
+        const retryResponse = NextResponse.redirect(retryUrl);
+        const cookieCount = appendSetCookieHeaders(refreshResponse, retryResponse);
+        if (cookieCount > 0) {
+          middlewareLogger.redirect(pathname, retryUrl.pathname, 'Session refreshed silently');
+          return retryResponse;
+        }
+      }
+    }
+
     // Redirect to login with callback
     middlewareLogger.redirect(pathname, '/login', 'User not authenticated');
     const loginUrl = new URL('/login', request.url);
@@ -124,14 +172,14 @@ export async function middleware(request: NextRequest) {
   if (matchedRoute && user) {
     // Check email verification requirement (admins bypass this check)
     const isAdmin = user.roles.includes('admin');
-    
+
     middlewareLogger.emailVerificationCheck(
       pathname,
       user.emailVerified || false,
       matchedRoute.requireEmailVerified || false,
       isAdmin
     );
-    
+
     if (matchedRoute.requireEmailVerified && !user.emailVerified && !isAdmin) {
       middlewareLogger.redirect(pathname, '/verify-email', 'Email not verified');
       const verifyUrl = new URL('/verify-email', request.url);
@@ -143,7 +191,7 @@ export async function middleware(request: NextRequest) {
     if (matchedRoute.roles) {
       const hasAccess = hasRequiredRole(user.roles, matchedRoute.roles);
       middlewareLogger.roleCheck(pathname, user.roles, matchedRoute.roles, hasAccess);
-      
+
       if (!hasAccess) {
         // User doesn't have required role
         middlewareLogger.redirect(pathname, '/dashboard', 'Insufficient permissions');

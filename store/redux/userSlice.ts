@@ -29,10 +29,33 @@ export const fetchUserProfile = createAsyncThunk(
         credentials: 'include',
       });
 
-      if (!response.ok) {
-        if (response.status === 401) {
-          return null; // Not authenticated
+      if (response.status === 401) {
+        // Access token may be expired after app/server restart. Try one silent refresh.
+        const refreshResponse = await fetch('/api/auth/refresh', {
+          method: 'POST',
+          credentials: 'include',
+        });
+
+        if (!refreshResponse.ok) {
+          return null;
         }
+
+        const retryResponse = await fetch('/api/auth/me', {
+          credentials: 'include',
+        });
+
+        if (!retryResponse.ok) {
+          if (retryResponse.status === 401) {
+            return null;
+          }
+          throw new Error('Failed to fetch user profile');
+        }
+
+        const retryData = await retryResponse.json();
+        return retryData.data.user;
+      }
+
+      if (!response.ok) {
         throw new Error('Failed to fetch user profile');
       }
 
