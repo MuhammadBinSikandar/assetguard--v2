@@ -17,7 +17,7 @@ const prismaClientSingleton = () => {
     throw new Error('DATABASE_URL is not set for Prisma');
   }
 
-  const adapter = new PrismaNeon(datasourceUrl);
+  const adapter = new PrismaNeon({ connectionString: datasourceUrl });
 
   return new PrismaClient({
     adapter,
