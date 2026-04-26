@@ -32,6 +32,7 @@ export async function GET(request: NextRequest) {
         emailVerified: true,
         twoFactorEnabled: true,
         kycStatus: true,
+        walletAddress: true,
         createdAt: true,
         updatedAt: true,
       },
