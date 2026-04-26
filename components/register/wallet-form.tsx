@@ -72,7 +72,7 @@ export default function WalletForm({
               <Link href="/wallet" className="text-primary underline underline-offset-2">
                 Wallet page
               </Link>{" "}
-              to connect your Phantom wallet, then come back here.
+              to connect your wallet, then come back here.
             </p>
           </div>
         </div>
@@ -90,7 +90,7 @@ export default function WalletForm({
       </header>
 
       <div className="max-w-xl space-y-2">
-        <Label htmlFor="wallet">Connected Phantom Wallet</Label>
+        <Label htmlFor="wallet">Connected Solana Wallet</Label>
         <div className="relative">
           <Wallet className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input

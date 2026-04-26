@@ -8,6 +8,13 @@ import type { PropertyData } from "./bbl-form"
 
 export type { PropertyData }
 
+/** Parse number input: empty → null; "0" stays 0 (truthy checks would drop zero). */
+function optionalNumberFromInput(raw: string): number | null {
+  if (raw === "") return null
+  const n = Number(raw)
+  return Number.isFinite(n) ? n : null
+}
+
 export default function PropertyDetails({
   property,
   onBack,
@@ -133,8 +140,8 @@ export default function PropertyDetails({
                 <Input
                   id="yearBuilt"
                   type="number"
-                  value={formData.building.yearBuilt || ""}
-                  onChange={(e) => handleChange("yearBuilt", e.target.value ? Number(e.target.value) : null, "building")}
+                  value={formData.building.yearBuilt ?? ""}
+                  onChange={(e) => handleChange("yearBuilt", optionalNumberFromInput(e.target.value), "building")}
                   placeholder="e.g., 2000"
                 />
               </div>
@@ -143,8 +150,8 @@ export default function PropertyDetails({
                 <Input
                   id="stories"
                   type="number"
-                  value={formData.building.stories || ""}
-                  onChange={(e) => handleChange("stories", e.target.value ? Number(e.target.value) : null, "building")}
+                  value={formData.building.stories ?? ""}
+                  onChange={(e) => handleChange("stories", optionalNumberFromInput(e.target.value), "building")}
                   placeholder="e.g., 3"
                 />
               </div>
@@ -154,8 +161,8 @@ export default function PropertyDetails({
               <Input
                 id="totalArea"
                 type="number"
-                value={formData.building.totalArea || ""}
-                onChange={(e) => handleChange("totalArea", e.target.value ? Number(e.target.value) : null, "building")}
+                value={formData.building.totalArea ?? ""}
+                onChange={(e) => handleChange("totalArea", optionalNumberFromInput(e.target.value), "building")}
                 placeholder="e.g., 2500"
               />
             </div>
@@ -165,9 +172,9 @@ export default function PropertyDetails({
                 <Input
                   id="commercialUnits"
                   type="number"
-                  value={formData.building.commercialUnits || ""}
+                  value={formData.building.commercialUnits ?? ""}
                   onChange={(e) =>
-                    handleChange("commercialUnits", e.target.value ? Number(e.target.value) : null, "building")
+                    handleChange("commercialUnits", optionalNumberFromInput(e.target.value), "building")
                   }
                   placeholder="e.g., 0"
                 />
@@ -177,9 +184,9 @@ export default function PropertyDetails({
                 <Input
                   id="residentialUnits"
                   type="number"
-                  value={formData.building.residentialUnits || ""}
+                  value={formData.building.residentialUnits ?? ""}
                   onChange={(e) =>
-                    handleChange("residentialUnits", e.target.value ? Number(e.target.value) : null, "building")
+                    handleChange("residentialUnits", optionalNumberFromInput(e.target.value), "building")
                   }
                   placeholder="e.g., 1"
                 />
@@ -199,8 +206,8 @@ export default function PropertyDetails({
                 <Input
                   id="frontage"
                   type="number"
-                  value={formData.land.frontage || ""}
-                  onChange={(e) => handleChange("frontage", e.target.value ? Number(e.target.value) : null, "land")}
+                  value={formData.land.frontage ?? ""}
+                  onChange={(e) => handleChange("frontage", optionalNumberFromInput(e.target.value), "land")}
                   placeholder="e.g., 25"
                 />
               </div>
@@ -209,8 +216,8 @@ export default function PropertyDetails({
                 <Input
                   id="depth"
                   type="number"
-                  value={formData.land.depth || ""}
-                  onChange={(e) => handleChange("depth", e.target.value ? Number(e.target.value) : null, "land")}
+                  value={formData.land.depth ?? ""}
+                  onChange={(e) => handleChange("depth", optionalNumberFromInput(e.target.value), "land")}
                   placeholder="e.g., 100"
                 />
               </div>
@@ -220,8 +227,8 @@ export default function PropertyDetails({
               <Input
                 id="landArea"
                 type="number"
-                value={formData.land.landArea || ""}
-                onChange={(e) => handleChange("landArea", e.target.value ? Number(e.target.value) : null, "land")}
+                value={formData.land.landArea ?? ""}
+                onChange={(e) => handleChange("landArea", optionalNumberFromInput(e.target.value), "land")}
                 placeholder="e.g., 2500"
               />
             </div>
@@ -239,9 +246,9 @@ export default function PropertyDetails({
             <Input
               id="marketValue"
               type="number"
-              value={formData.assessment.marketValue || ""}
+              value={formData.assessment.marketValue ?? ""}
               onChange={(e) =>
-                handleChange("marketValue", e.target.value ? Number(e.target.value) : null, "assessment")
+                handleChange("marketValue", optionalNumberFromInput(e.target.value), "assessment")
               }
               placeholder="Enter estimated property value (e.g., 500000)"
               className="w-full"

@@ -153,7 +153,7 @@ export default function ReviewAndSubmit({
               <AccordionTrigger>Wallet Information</AccordionTrigger>
               <AccordionContent>
                 <div className="grid grid-cols-2 gap-3 text-sm">
-                  <Item label="Phantom Wallet Address" value={maskedWallet} />
+                  <Item label="Solana Wallet Address" value={maskedWallet} />
                   <Item label="Blockchain Network" value="Solana Devnet" />
                   <Item label="Token Symbol" value="AG" />
                 </div>
