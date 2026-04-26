@@ -1,7 +1,6 @@
 "use client"
 
 import { useState, useEffect, useCallback } from "react"
-import { useWallet } from "@solana/wallet-adapter-react"
 import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar"
 import { DashboardSidebar } from "@/components/dashboard/sidebar"
 import { TopBar } from "@/components/dashboard/topbar"
@@ -12,7 +11,6 @@ import { TokenHoldings } from "@/components/wallet/token-holdings"
 import { TransactionHistory } from "@/components/wallet/transaction-history"
 import { WalletLinker } from "@/components/wallet/wallet-linker"
 import { UserAssetDashboard } from "@/components/wallet/user-asset-dashboard"
-import { SolanaWalletProvider } from "@/components/wallet/solana-wallet-provider"
 import { useIsMobile } from "@/components/ui/use-mobile"
 import { useAppSelector } from "@/store/redux/store"
 import { selectIsHydrated } from "@/store/redux/userSlice"
@@ -23,7 +21,6 @@ import { Card, CardContent } from "@/components/ui/card"
 function WalletPageContent() {
   const [addFundsOpen, setAddFundsOpen] = useState(false)
   const isMobile = useIsMobile()
-  const { connected: solanaConnected } = useWallet()
 
   // Auth state from Redux
   const user = useAppSelector((state) => state.user.user)
@@ -164,9 +161,5 @@ function WalletPageContent() {
 }
 
 export default function WalletPage() {
-  return (
-    <SolanaWalletProvider>
-      <WalletPageContent />
-    </SolanaWalletProvider>
-  )
+  return <WalletPageContent />
 }
