@@ -13,9 +13,11 @@ import { NotificationsPanel } from "@/components/settings/notifications-panel"
 import { PrivacyPanel } from "@/components/settings/privacy-panel"
 import { ArrowLeft } from "lucide-react"
 
-type TabKey = "Profile" | "Security" | "Wallet" | "Notifications" | "Privacy"
+// type TabKey = "Profile" | "Security" | "Wallet" | "Notifications" | "Privacy"
+type TabKey = "Profile" | "Security" | "Wallet" | "Privacy"
 
-const tabs: TabKey[] = ["Profile", "Security", "Wallet", "Notifications", "Privacy"]
+const tabs: TabKey[] = ["Profile", "Security", "Wallet", "Privacy"]
+// const tabs: TabKey[] = ["Profile", "Security", "Wallet", "Notifications", "Privacy"]
 
 export default function SettingsPage() {
   const [active, setActive] = useState<TabKey>("Profile")
@@ -62,7 +64,7 @@ export default function SettingsPage() {
             {active === "Profile" && <ProfilePanel />}
             {active === "Security" && <SecurityPanel />}
             {active === "Wallet" && <WalletPanel />}
-            {active === "Notifications" && <NotificationsPanel />}
+            {/* {active === "Notifications" && <NotificationsPanel />} */}
             {active === "Privacy" && <PrivacyPanel />}
 
             <Separator className="mt-6" />
