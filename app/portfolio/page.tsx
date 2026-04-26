@@ -15,9 +15,9 @@ export default function PortfolioPage() {
         <TopBar />
         <main className="px-4 pb-10 pt-4 md:px-6">
           <Tabs defaultValue="total" className="w-full">
-            <TabsList className="mb-6 grid w-full grid-cols-2">
-              <TabsTrigger value="total">Total Properties</TabsTrigger>
-              <TabsTrigger value="registered">Registered Properties</TabsTrigger>
+            <TabsList className="mb-6 grid w-full max-w-md grid-cols-2">
+              <TabsTrigger value="total">Total properties</TabsTrigger>
+              <TabsTrigger value="registered">Registered properties</TabsTrigger>
             </TabsList>
 
             <TabsContent value="total">
