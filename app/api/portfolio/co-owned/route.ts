@@ -4,6 +4,7 @@ import { getUserFromAccessToken } from '@/lib/auth';
 import { apiLogger } from '@/lib/debug-logger';
 import { resolvePropertyTokenSupply, resolvePropertyPricePerToken } from '@/lib/property-tokens';
 import { effectivePropertyValuationUsd } from '@/lib/property-valuation';
+import { getWalletMintBalance } from '@/lib/solana/token-balances';
 
 export async function GET(_req: NextRequest) {
   try {
@@ -16,7 +17,7 @@ export async function GET(_req: NextRequest) {
       );
     }
 
-    const [rows, activeListings] = await Promise.all([
+    const [rows, activeListings, me] = await Promise.all([
       prisma.propertyOwnership.findMany({
         where: { userId: decoded.userId, tokensOwned: { gt: 0 } },
         orderBy: { updatedAt: 'desc' },
@@ -59,6 +60,10 @@ export async function GET(_req: NextRequest) {
           },
         },
       }),
+      prisma.user.findUnique({
+        where: { id: decoded.userId },
+        select: { walletAddress: true },
+      }),
     ]);
 
     const fromPo = new Map(rows.map((r) => [r.propertyId, r]));
@@ -69,72 +74,74 @@ export async function GET(_req: NextRequest) {
     const myListingRows =
       allIdsList.length > 0
         ? await prisma.propertyListing.findMany({
-            where: { sellerId: decoded.userId, propertyId: { in: allIdsList } },
-            select: { id: true, status: true, propertyId: true, tokensRemaining: true },
-          })
+          where: { sellerId: decoded.userId, propertyId: { in: allIdsList } },
+          select: { id: true, status: true, propertyId: true, tokensRemaining: true },
+        })
         : [];
     const myListingByProperty = new Map(
       myListingRows.map((x) => [x.propertyId, x] as const),
     );
 
-    const data = allIdsList
-      .map((propertyId) => {
-        const r = fromPo.get(propertyId);
-        const l = fromListing.get(propertyId);
-        const p = r?.property ?? l?.property;
-        if (!p) return null;
+    const dataRows = await Promise.all(allIdsList.map(async (propertyId) => {
+      const r = fromPo.get(propertyId);
+      const l = fromListing.get(propertyId);
+      const p = r?.property ?? l?.property;
+      if (!p) return null;
 
-        const fromPurchases = r?.tokensOwned ?? 0;
-        const inListing = l ? l.tokensRemaining : 0;
-        const totalTokens = fromPurchases + inListing;
-        const myListing = myListingByProperty.get(propertyId) ?? null;
+      const fromPurchases = r?.tokensOwned ?? 0;
+      const inListing = l ? l.tokensRemaining : 0;
+      const dbTotalTokens = fromPurchases + inListing;
+      const onChainBalance = await getWalletMintBalance(me?.walletAddress, p.mintAddress);
+      const totalTokens = onChainBalance != null ? Math.floor(onChainBalance) : dbTotalTokens;
+      const myListing = myListingByProperty.get(propertyId) ?? null;
 
-        const supply = resolvePropertyTokenSupply(p.tokenSupply);
-        const ppt = resolvePropertyPricePerToken(
-          p.estimatedPriceUSD,
-          p.verifiedPriceUSD,
-          p.pricePerToken,
-        );
-        const shareUsd = totalTokens * ppt;
-        const pct = supply > 0 ? (totalTokens / supply) * 100 : 0;
-        const v = effectivePropertyValuationUsd(p.estimatedPriceUSD, p.verifiedPriceUSD);
+      const supply = resolvePropertyTokenSupply(p.tokenSupply);
+      const ppt = resolvePropertyPricePerToken(
+        p.estimatedPriceUSD,
+        p.verifiedPriceUSD,
+        p.pricePerToken,
+      );
+      const shareUsd = totalTokens * ppt;
+      const pct = supply > 0 ? (totalTokens / supply) * 100 : 0;
+      const v = effectivePropertyValuationUsd(p.estimatedPriceUSD, p.verifiedPriceUSD);
 
-        const canListSharesForSale =
-          fromPurchases > 0 &&
-          (!myListing || myListing.status === 'SOLD');
+      const canListSharesForSale =
+        fromPurchases > 0 &&
+        (!myListing || myListing.status === 'SOLD');
 
-        return {
-          ownershipId: r?.id ?? `listing-stake-${l?.id ?? propertyId}`,
-          tokensOwned: totalTokens,
-          tokensFromPurchases: fromPurchases,
-          tokensInActiveListing: inListing,
-          ownershipPercent: pct,
-          estimatedShareUSD: shareUsd,
-          fullValuationUSD: v,
-          userListing: myListing
-            ? {
-                id: myListing.id,
-                status: myListing.status,
-                tokensRemaining: myListing.tokensRemaining,
-              }
-            : null,
-          canListSharesForSale,
-          property: {
-            id: p.id,
-            referenceId: p.referenceId,
-            borough: p.borough,
-            block: p.block,
-            lot: p.lot,
-            propertyAddress: p.propertyAddress,
-            mintAddress: p.mintAddress,
-            pricePerToken: ppt,
-            tokenSupply: supply,
-            estimatedPriceUSD: p.estimatedPriceUSD,
-            verifiedPriceUSD: p.verifiedPriceUSD,
-          },
-        };
-      })
-      .filter((x) => x != null) as {
+      return {
+        ownershipId: r?.id ?? `listing-stake-${l?.id ?? propertyId}`,
+        tokensOwned: totalTokens,
+        tokensFromPurchases: fromPurchases,
+        tokensInActiveListing: inListing,
+        ownershipPercent: pct,
+        estimatedShareUSD: shareUsd,
+        fullValuationUSD: v,
+        userListing: myListing
+          ? {
+            id: myListing.id,
+            status: myListing.status,
+            tokensRemaining: myListing.tokensRemaining,
+          }
+          : null,
+        canListSharesForSale,
+        property: {
+          id: p.id,
+          referenceId: p.referenceId,
+          borough: p.borough,
+          block: p.block,
+          lot: p.lot,
+          propertyAddress: p.propertyAddress,
+          mintAddress: p.mintAddress,
+          pricePerToken: ppt,
+          tokenSupply: supply,
+          estimatedPriceUSD: p.estimatedPriceUSD,
+          verifiedPriceUSD: p.verifiedPriceUSD,
+        },
+      };
+    }));
+
+    const data = dataRows.filter((x) => x != null) as {
       ownershipId: string;
       tokensOwned: number;
       tokensFromPurchases: number;
