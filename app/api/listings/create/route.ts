@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/db/prismaClient';
 import { getUserFromAccessToken } from '@/lib/auth';
 import { apiLogger } from '@/lib/debug-logger';
-import { ListingStatus, PropertyStatus } from '@prisma/client';
+import { ListingStatus, PropertyStatus, PurchaseStatus } from '@prisma/client';
 import {
   resolvePropertyPricePerToken,
   resolvePropertyTokenSupply,
@@ -54,18 +54,6 @@ export async function POST(request: NextRequest) {
 
     const isRegistrant = property.ownerId === uid;
 
-    const ownership = await prisma.propertyOwnership.findUnique({
-      where: { propertyId_userId: { propertyId, userId: uid } },
-    });
-    const ownershipBalance = ownership?.tokensOwned ?? 0;
-
-    if (!isRegistrant && ownershipBalance < 1) {
-      return NextResponse.json(
-        { success: false, message: 'You need token shares in this property to create a listing.' },
-        { status: 403 },
-      );
-    }
-
     const tokenSupply = resolvePropertyTokenSupply(property.tokenSupply);
     const pricePerToken = resolvePropertyPricePerToken(
       property.estimatedPriceUSD,
@@ -73,31 +61,52 @@ export async function POST(request: NextRequest) {
       property.pricePerToken,
     );
 
-    if (isRegistrant) {
-      if (tokensListed > tokenSupply) {
-        return NextResponse.json(
-          {
-            success: false,
-            message: `Cannot list more than the total token supply (${tokenSupply}).`,
-          },
-          { status: 400 },
-        );
-      }
-    } else {
-      if (tokensListed > ownershipBalance) {
-        return NextResponse.json(
-          {
-            success: false,
-            message: `You can list at most ${ownershipBalance} token(s) (your on-platform balance for this property).`,
-          },
-          { status: 400 },
-        );
-      }
-    }
-
     const existing = await prisma.propertyListing.findFirst({
       where: { propertyId, sellerId: uid },
     });
+
+    const [buyerAgg, sellerAgg] = await Promise.all([
+      prisma.tokenPurchase.aggregate({
+        where: {
+          propertyId,
+          buyerId: uid,
+          status: PurchaseStatus.COMPLETED,
+        },
+        _sum: { tokensBought: true },
+      }),
+      prisma.tokenPurchase.aggregate({
+        where: {
+          propertyId,
+          sellerId: uid,
+          status: PurchaseStatus.COMPLETED,
+        },
+        _sum: { tokensBought: true },
+      }),
+    ]);
+
+    const bought = buyerAgg._sum.tokensBought ?? 0;
+    const sold = sellerAgg._sum.tokensBought ?? 0;
+    const currentlyHeld = Math.max(0, (isRegistrant ? tokenSupply : 0) + bought - sold);
+    const activeListed = existing?.status === ListingStatus.ACTIVE ? existing.tokensRemaining : 0;
+    const maxNewListingTokens = Math.max(0, currentlyHeld - activeListed);
+
+    if (maxNewListingTokens < 1) {
+      return NextResponse.json(
+        { success: false, message: 'You do not currently have available tokens to list for this property.' },
+        { status: 403 },
+      );
+    }
+
+    if (tokensListed > maxNewListingTokens) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: `You can list at most ${maxNewListingTokens} token(s) based on your current balance.`,
+        },
+        { status: 400 },
+      );
+    }
+
     if (existing?.status === ListingStatus.ACTIVE) {
       return NextResponse.json(
         { success: false, message: 'You already have an active listing for this property.' },
@@ -109,60 +118,60 @@ export async function POST(request: NextRequest) {
 
     const listing = existing
       ? await prisma.propertyListing.update({
-          where: { id: existing.id },
-          data: {
-            status: ListingStatus.ACTIVE,
-            tokensListed,
-            tokensRemaining: tokensListed,
-            pricePerToken,
-            totalValue,
-          },
-          include: {
-            property: {
-              select: {
-                id: true,
-                referenceId: true,
-                borough: true,
-                block: true,
-                lot: true,
-                propertyAddress: true,
-                propertyType: true,
-                estimatedPriceUSD: true,
-                mintAddress: true,
-                tokenSupply: true,
-                pricePerToken: true,
-              },
+        where: { id: existing.id },
+        data: {
+          status: ListingStatus.ACTIVE,
+          tokensListed,
+          tokensRemaining: tokensListed,
+          pricePerToken,
+          totalValue,
+        },
+        include: {
+          property: {
+            select: {
+              id: true,
+              referenceId: true,
+              borough: true,
+              block: true,
+              lot: true,
+              propertyAddress: true,
+              propertyType: true,
+              estimatedPriceUSD: true,
+              mintAddress: true,
+              tokenSupply: true,
+              pricePerToken: true,
             },
           },
-        })
+        },
+      })
       : await prisma.propertyListing.create({
-          data: {
-            propertyId,
-            sellerId: uid,
-            tokensListed,
-            tokensRemaining: tokensListed,
-            pricePerToken,
-            totalValue,
-            status: ListingStatus.ACTIVE,
-          },
-          include: {
-            property: {
-              select: {
-                id: true,
-                referenceId: true,
-                borough: true,
-                block: true,
-                lot: true,
-                propertyAddress: true,
-                propertyType: true,
-                estimatedPriceUSD: true,
-                mintAddress: true,
-                tokenSupply: true,
-                pricePerToken: true,
-              },
+        data: {
+          propertyId,
+          sellerId: uid,
+          tokensListed,
+          tokensRemaining: tokensListed,
+          pricePerToken,
+          totalValue,
+          status: ListingStatus.ACTIVE,
+        },
+        include: {
+          property: {
+            select: {
+              id: true,
+              referenceId: true,
+              borough: true,
+              block: true,
+              lot: true,
+              propertyAddress: true,
+              propertyType: true,
+              estimatedPriceUSD: true,
+              mintAddress: true,
+              tokenSupply: true,
+              pricePerToken: true,
             },
           },
-        });
+        },
+      });
 
     apiLogger.response('POST', '/api/listings/create', 200, true);
     return NextResponse.json({ success: true, data: listing }, { status: 201 });

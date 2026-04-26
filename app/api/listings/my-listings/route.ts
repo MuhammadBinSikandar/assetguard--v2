@@ -7,6 +7,7 @@ import { getUserFromAccessToken } from '@/lib/auth';
 import { apiLogger } from '@/lib/debug-logger';
 import { getAdminKeypair, getSolanaRpcUrl } from '@/lib/solana/admin-keypair';
 import { resolveCustodyForTransfer } from '@/lib/solana/listing-custody';
+import { resolvePropertyTokenSupply } from '@/lib/property-tokens';
 export async function GET(request: NextRequest) {
   try {
     apiLogger.request('GET', '/api/listings/my-listings');
@@ -27,6 +28,7 @@ export async function GET(request: NextRequest) {
           property: {
             select: {
               id: true,
+              ownerId: true,
               referenceId: true,
               borough: true,
               block: true,
@@ -49,6 +51,39 @@ export async function GET(request: NextRequest) {
         select: { walletAddress: true },
       }),
     ]);
+
+    const propertyIds = Array.from(new Set(listings.map((l) => l.propertyId)));
+    const [buyAgg, sellAgg] = await Promise.all([
+      propertyIds.length
+        ? prisma.tokenPurchase.groupBy({
+          by: ['propertyId'],
+          where: {
+            propertyId: { in: propertyIds },
+            buyerId: decoded.userId,
+            status: 'COMPLETED',
+          },
+          _sum: { tokensBought: true },
+        })
+        : Promise.resolve([]),
+      propertyIds.length
+        ? prisma.tokenPurchase.groupBy({
+          by: ['propertyId'],
+          where: {
+            propertyId: { in: propertyIds },
+            sellerId: decoded.userId,
+            status: 'COMPLETED',
+          },
+          _sum: { tokensBought: true },
+        })
+        : Promise.resolve([]),
+    ]);
+
+    const boughtByProperty = new Map<string, number>(
+      buyAgg.map((r) => [r.propertyId, r._sum.tokensBought ?? 0] as const),
+    );
+    const soldByProperty = new Map<string, number>(
+      sellAgg.map((r) => [r.propertyId, r._sum.tokensBought ?? 0] as const),
+    );
 
     let connection: Connection | null = null;
     let adminPub: PublicKey | null = null;
@@ -107,6 +142,13 @@ export async function GET(request: NextRequest) {
       property: l.property,
       bookmarked: l.bookmarks.length > 0,
       custodyReady: custodyReady[i] ?? false,
+      maxAdditionalTokens: Math.max(
+        0,
+        (l.property.ownerId === decoded.userId ? resolvePropertyTokenSupply(l.property.tokenSupply) : 0) +
+        (boughtByProperty.get(l.propertyId) ?? 0) -
+        (soldByProperty.get(l.propertyId) ?? 0) -
+        l.tokensRemaining,
+      ),
     }));
     apiLogger.response('GET', '/api/listings/my-listings', 200, true);
     return NextResponse.json({ success: true, data }, { status: 200 });
