@@ -57,11 +57,75 @@ export async function PATCH(
       );
     }
 
+    let minting: {
+      attempted: boolean;
+      success: boolean;
+      status: number;
+      message: string;
+      data: unknown;
+    } | null = null;
+
+    if (action === 'APPROVE') {
+      const mintUrl = `${request.nextUrl.origin}/api/admin/mint-property`;
+      const cookieHeader = request.headers.get('cookie');
+
+      try {
+        const mintRes = await fetch(mintUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(cookieHeader ? { cookie: cookieHeader } : {}),
+          },
+          cache: 'no-store',
+          body: JSON.stringify({
+            propertyId: result.id,
+            userWalletAddress: result.walletAddress,
+          }),
+        });
+
+        const mintJson = await mintRes.json().catch(() => ({}));
+
+        minting = {
+          attempted: true,
+          success: mintRes.ok && Boolean(mintJson?.success),
+          status: mintRes.status,
+          message:
+            typeof mintJson?.message === 'string'
+              ? mintJson.message
+              : mintRes.ok
+                ? 'Minting completed.'
+                : 'Minting failed.',
+          data: mintJson?.data ?? null,
+        };
+      } catch (mintError) {
+        minting = {
+          attempted: true,
+          success: false,
+          status: 500,
+          message:
+            mintError instanceof Error ? mintError.message : 'Minting request failed.',
+          data: null,
+        };
+      }
+    }
+
+    const approvalMessage =
+      action === 'APPROVE'
+        ? minting?.success
+          ? 'Property approved and tokens minted successfully.'
+          : 'Property approved, but token minting failed. You can retry minting from the property details panel.'
+        : action === 'REJECT'
+          ? 'Property rejected successfully.'
+          : 'Property marked as under review successfully.';
+
     return NextResponse.json(
       {
         success: true,
-        message: `Property ${action === 'APPROVE' ? 'approved' : action === 'REJECT' ? 'rejected' : 'marked as under review'} successfully.`,
-        data: result,
+        message: approvalMessage,
+        data: {
+          ...result,
+          minting,
+        },
       },
       { status: 200 },
     );
