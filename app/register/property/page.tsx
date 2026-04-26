@@ -68,15 +68,18 @@ export default function PropertyRegistrationPage() {
       formData.append("propertyType", typeMap[rawType] || typeMap[rawType.replace(/_/g, "")] || "RESIDENTIAL")
       formData.append("taxClass", property.taxClass || "1")
 
-      // Helper: only append if the value is a finite positive number
-      const appendNum = (key: string, val: number | null | undefined) => {
-        if (val != null && Number.isFinite(val) && val > 0) formData.append(key, String(val))
+      // Append optional numeric field (allows 0; omits only when null/undefined/non-finite)
+      const appendOptionalNum = (key: string, val: number | null | undefined) => {
+        if (val != null && Number.isFinite(val) && val >= 0) formData.append(key, String(val))
       }
 
-      // Building info
-      appendNum("yearBuilt", property.building?.yearBuilt)
-      appendNum("stories", property.building?.stories)
-      appendNum("totalAreaSqFt", property.building?.totalArea)
+      // Year built: omit 0 / invalid years; server validates range when present
+      const yb = property.building?.yearBuilt
+      if (yb != null && Number.isFinite(yb) && yb > 0) formData.append("yearBuilt", String(yb))
+
+      // Building info (0 allowed for stories, area, units)
+      appendOptionalNum("stories", property.building?.stories)
+      appendOptionalNum("totalAreaSqFt", property.building?.totalArea)
       // Units can be 0
       if (property.building?.commercialUnits != null && Number.isFinite(property.building.commercialUnits)) {
         formData.append("commercialUnits", String(property.building.commercialUnits))
@@ -85,14 +88,15 @@ export default function PropertyRegistrationPage() {
         formData.append("residentialUnits", String(property.building.residentialUnits))
       }
 
-      // Land info
-      appendNum("frontage", property.land?.frontage)
-      appendNum("depth", property.land?.depth)
-      appendNum("landAreaSqFt", property.land?.landArea)
+      // Land info (0 allowed)
+      appendOptionalNum("frontage", property.land?.frontage)
+      appendOptionalNum("depth", property.land?.depth)
+      appendOptionalNum("landAreaSqFt", property.land?.landArea)
 
-      // Valuation
+      // Valuation (0 allowed)
       const price = property.assessment?.marketValue
-      formData.append("estimatedPriceUSD", String(price && Number.isFinite(price) && price > 0 ? price : 1))
+      const priceToSend = price != null && Number.isFinite(price) && price >= 0 ? price : 0
+      formData.append("estimatedPriceUSD", String(priceToSend))
 
       // Document
       if (documents.titleDeed.file) {
