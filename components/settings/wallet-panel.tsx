@@ -14,7 +14,7 @@ const MASKED = "8Df4z...R2qH"
 export function WalletPanel() {
   const [connected, setConnected] = useState(true)
   const [isDefault, setIsDefault] = useState(true)
-  const [name] = useState("Phantom")
+  const [name] = useState("Solana Wallet")
   const [addr] = useState(MASKED)
 
   const copy = async () => {
