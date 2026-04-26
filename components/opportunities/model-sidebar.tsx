@@ -3,7 +3,7 @@
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart"
-import { Line, LineChart, CartesianGrid, XAxis, YAxis, ResponsiveContainer, Legend } from "recharts"
+import { Line, LineChart, CartesianGrid, XAxis, YAxis, Legend } from "recharts"
 import { Separator } from "@/components/ui/separator"
 
 const perfData = [
@@ -41,17 +41,15 @@ export function ModelSidebar() {
                 actual: { label: "Actual ROI", color: "hsl(var(--chart-2))" },
               }}
             >
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={perfData}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="month" />
-                  <YAxis />
-                  <ChartTooltip content={<ChartTooltipContent />} />
-                  <Legend />
-                  <Line type="monotone" dataKey="predicted" stroke="var(--color-predicted)" />
-                  <Line type="monotone" dataKey="actual" stroke="var(--color-actual)" />
-                </LineChart>
-              </ResponsiveContainer>
+              <LineChart data={perfData}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="month" />
+                <YAxis />
+                <ChartTooltip content={<ChartTooltipContent />} />
+                <Legend />
+                <Line type="monotone" dataKey="predicted" stroke="var(--color-predicted)" />
+                <Line type="monotone" dataKey="actual" stroke="var(--color-actual)" />
+              </LineChart>
             </ChartContainer>
           </div>
         </CardContent>

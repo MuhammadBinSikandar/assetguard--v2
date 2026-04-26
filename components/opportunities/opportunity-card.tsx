@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart"
-import { RadialBar, RadialBarChart, ResponsiveContainer } from "recharts"
+import { RadialBar, RadialBarChart } from "recharts"
 import { ArrowUpRight, ArrowDownRight, Bell, Bookmark } from "lucide-react"
 import type { Opportunity } from "./data"
 
@@ -19,16 +19,14 @@ function ConfidenceRadial({ value }: { value: number }) {
       }}
       className="h-24 w-24"
     >
-      <ResponsiveContainer width="100%" height="100%">
-        <RadialBarChart data={data} innerRadius="60%" outerRadius="100%" startAngle={90} endAngle={-270}>
-          <ChartTooltip cursor={false} content={<ChartTooltipContent />} />
-          <RadialBar dataKey="value" background cornerRadius={6} />
-          {/* Center label */}
-          <foreignObject x="25%" y="25%" width="50%" height="50%">
-            <div className="flex h-full w-full items-center justify-center text-sm font-medium">{value}%</div>
-          </foreignObject>
-        </RadialBarChart>
-      </ResponsiveContainer>
+      <RadialBarChart data={data} innerRadius="60%" outerRadius="100%" startAngle={90} endAngle={-270}>
+        <ChartTooltip cursor={false} content={<ChartTooltipContent />} />
+        <RadialBar dataKey="value" background cornerRadius={6} />
+        {/* Center label */}
+        <foreignObject x="25%" y="25%" width="50%" height="50%">
+          <div className="flex h-full w-full items-center justify-center text-sm font-medium">{value}%</div>
+        </foreignObject>
+      </RadialBarChart>
     </ChartContainer>
   )
 }
