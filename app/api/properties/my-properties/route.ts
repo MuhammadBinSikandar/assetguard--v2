@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/db/prismaClient';
 import { getUserFromAccessToken } from '@/lib/auth';
 import { apiLogger } from '@/lib/debug-logger';
+import { getWalletMintBalance } from '@/lib/solana/token-balances';
 
 export async function GET(request: NextRequest) {
   try {
@@ -49,16 +50,22 @@ export async function GET(request: NextRequest) {
     const myListings =
       ids.length > 0
         ? await prisma.propertyListing.findMany({
-            where: { sellerId: decoded.userId, propertyId: { in: ids } },
-            select: { id: true, status: true, propertyId: true },
-          })
+          where: { sellerId: decoded.userId, propertyId: { in: ids } },
+          select: { id: true, status: true, propertyId: true },
+        })
         : [];
     const listingByProperty = new Map(myListings.map((l) => [l.propertyId, l] as const));
 
-    const data = properties.map((p) => ({
-      ...p,
-      listing: listingByProperty.get(p.id) ?? null,
-    }));
+    const data = await Promise.all(
+      properties.map(async (p) => {
+        const onChainBalance = await getWalletMintBalance(p.walletAddress, p.mintAddress);
+        return {
+          ...p,
+          currentWalletTokens: onChainBalance != null ? Math.floor(onChainBalance) : null,
+          listing: listingByProperty.get(p.id) ?? null,
+        };
+      }),
+    );
 
     apiLogger.response('GET', '/api/properties/my-properties', 200, true);
 
