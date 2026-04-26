@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState, useCallback } from "react"
+import { useEffect, useState, useCallback, useMemo } from "react"
 import { useConnection, useWallet } from "@solana/wallet-adapter-react"
 import { LAMPORTS_PER_SOL, PublicKey } from "@solana/web3.js"
 import { Button } from "@/components/ui/button"
@@ -21,18 +21,32 @@ export function WalletHeader({ onDeposit, onWithdraw, walletAddress }: Props) {
   const [balance, setBalance] = useState<number | null>(null)
   const [loading, setLoading] = useState(true)
 
-  const owner = publicKey ?? (walletAddress ? new PublicKey(walletAddress) : null)
-  const fullAddress = owner?.toBase58() ?? ""
+  const ownerAddress = useMemo(() => {
+    if (publicKey) return publicKey.toBase58()
+    return walletAddress ?? null
+  }, [publicKey, walletAddress])
+
+  const fullAddress = ownerAddress ?? ""
   const shortAddress = fullAddress ? `${fullAddress.slice(0, 6)}...${fullAddress.slice(-4)}` : "—"
 
   const network = process.env.NEXT_PUBLIC_SOLANA_NETWORK || "devnet"
   const explorerClusterQuery = network === "mainnet-beta" ? "" : `?cluster=${network}`
 
   const fetchBalance = useCallback(async () => {
-    if (!owner) { setLoading(false); return }
+    if (!ownerAddress) { setLoading(false); return }
+
+    let ownerPubkey: PublicKey
+    try {
+      ownerPubkey = new PublicKey(ownerAddress)
+    } catch {
+      setLoading(false)
+      setBalance(null)
+      return
+    }
+
     try {
       setLoading(true)
-      const lamports = await connection.getBalance(owner)
+      const lamports = await connection.getBalance(ownerPubkey)
       setBalance(lamports / LAMPORTS_PER_SOL)
     } catch (err) {
       console.error("Failed to fetch balance:", err)
@@ -40,7 +54,7 @@ export function WalletHeader({ onDeposit, onWithdraw, walletAddress }: Props) {
     } finally {
       setLoading(false)
     }
-  }, [connection, owner])
+  }, [connection, ownerAddress])
 
   useEffect(() => { fetchBalance() }, [fetchBalance])
 
@@ -50,7 +64,7 @@ export function WalletHeader({ onDeposit, onWithdraw, walletAddress }: Props) {
       await navigator.clipboard.writeText(fullAddress)
       setCopied(true)
       setTimeout(() => setCopied(false), 1500)
-    } catch {}
+    } catch { }
   }
 
   return (

@@ -37,22 +37,41 @@ export function TransactionHistory({ walletAddress }: TransactionHistoryProps) {
   const { publicKey } = useWallet()
   const [transactions, setTransactions] = useState<SolanaTx[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const [query, setQuery] = useState("")
   const [page, setPage] = useState(1)
   const pageSize = 10
 
-  const owner = publicKey ?? (walletAddress ? new PublicKey(walletAddress) : null)
+  const ownerAddress = useMemo(() => {
+    if (publicKey) return publicKey.toBase58()
+    return walletAddress ?? null
+  }, [publicKey, walletAddress])
+
   const network = process.env.NEXT_PUBLIC_SOLANA_NETWORK || "devnet"
   const explorerClusterQuery = network === "mainnet-beta" ? "" : `?cluster=${network}`
 
   const fetchTransactions = useCallback(async () => {
-    if (!owner) { setLoading(false); return }
+    if (!ownerAddress) {
+      setLoading(false)
+      setError(null)
+      return
+    }
+
+    let ownerPubkey: PublicKey
+    try {
+      ownerPubkey = new PublicKey(ownerAddress)
+    } catch {
+      setLoading(false)
+      setError("Invalid wallet address format.")
+      return
+    }
 
     try {
       setLoading(true)
+      setError(null)
 
       // Fetch last 20 confirmed signatures
-      const signatures = await connection.getSignaturesForAddress(owner, { limit: 20 })
+      const signatures = await connection.getSignaturesForAddress(ownerPubkey, { limit: 20 })
 
       const txs: SolanaTx[] = signatures.map((sig, i) => {
         const ts = sig.blockTime
@@ -73,10 +92,15 @@ export function TransactionHistory({ walletAddress }: TransactionHistoryProps) {
       setTransactions(txs)
     } catch (err) {
       console.error("Failed to fetch transactions:", err)
+      const message =
+        err instanceof Error && (err.message.includes("429") || err.message.toLowerCase().includes("too many requests"))
+          ? "RPC rate limit reached. Please wait a few seconds and refresh."
+          : "Failed to fetch transaction history."
+      setError(message)
     } finally {
       setLoading(false)
     }
-  }, [connection, owner])
+  }, [connection, ownerAddress])
 
   useEffect(() => { fetchTransactions() }, [fetchTransactions])
 
@@ -148,6 +172,12 @@ export function TransactionHistory({ walletAddress }: TransactionHistoryProps) {
         </div>
       </CardHeader>
       <CardContent>
+        {error && (
+          <div className="mb-4 rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
+            {error}
+          </div>
+        )}
+
         {transactions.length === 0 ? (
           <div className="py-8 text-center space-y-2">
             <FileText className="mx-auto h-8 w-8 text-muted-foreground" />

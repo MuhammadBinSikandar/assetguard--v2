@@ -2,13 +2,13 @@
 
 import { useState, useCallback } from "react";
 import { useWallet } from "@solana/wallet-adapter-react";
-import { WalletMultiButton } from "@solana/wallet-adapter-react-ui";
 import bs58 from "bs58";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2, ShieldCheck, Wallet, Link2, AlertCircle } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import ConnectWallet from "@/components/wallet/connect-wallet";
 
 interface WalletLinkerProps {
   userId: string;
@@ -26,7 +26,7 @@ export function WalletLinker({ userId, onLinked, linkedWallet }: WalletLinkerPro
 
   const linkWalletToAccount = useCallback(async () => {
     if (!publicKey || !signMessage) {
-      setError("Wallet does not support message signing. Please use Phantom or Solflare.");
+      setError("Wallet does not support message signing. Please use a supported Solana wallet.");
       return;
     }
 
@@ -115,14 +115,7 @@ export function WalletLinker({ userId, onLinked, linkedWallet }: WalletLinkerPro
       <CardContent className="space-y-4">
         {/* Step 1: Connect */}
         <div className="flex justify-center">
-          <WalletMultiButton
-            style={{
-              backgroundColor: "hsl(var(--primary))",
-              borderRadius: "0.5rem",
-              height: "2.5rem",
-              fontSize: "0.875rem",
-            }}
-          />
+          <ConnectWallet />
         </div>
 
         {/* Step 2: Sign & Link */}

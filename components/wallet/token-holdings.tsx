@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useCallback, Fragment } from "react"
+import { useState, useEffect, useCallback, useMemo, Fragment } from "react"
 import { useConnection, useWallet } from "@solana/wallet-adapter-react"
 import { PublicKey } from "@solana/web3.js"
 import { TOKEN_PROGRAM_ID, TOKEN_2022_PROGRAM_ID } from "@solana/spl-token"
@@ -30,22 +30,41 @@ export function TokenHoldings({ walletAddress }: TokenHoldingsProps) {
   const { publicKey } = useWallet()
   const [holdings, setHoldings] = useState<TokenAccount[]>([])
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const [openId, setOpenId] = useState<string | null>(null)
 
-  const owner = publicKey ?? (walletAddress ? new PublicKey(walletAddress) : null)
+  const ownerAddress = useMemo(() => {
+    if (publicKey) return publicKey.toBase58()
+    return walletAddress ?? null
+  }, [publicKey, walletAddress])
+
   const network = process.env.NEXT_PUBLIC_SOLANA_NETWORK || "devnet"
   const explorerClusterQuery = network === "mainnet-beta" ? "" : `?cluster=${network}`
 
   const fetchTokens = useCallback(async () => {
-    if (!owner) { setLoading(false); return }
+    if (!ownerAddress) {
+      setLoading(false)
+      setError(null)
+      return
+    }
+
+    let ownerPubkey: PublicKey
+    try {
+      ownerPubkey = new PublicKey(ownerAddress)
+    } catch {
+      setLoading(false)
+      setError("Invalid wallet address format.")
+      return
+    }
 
     try {
       setLoading(true)
+      setError(null)
 
       // Fetch from both token programs in parallel
       const [splAccounts, token2022Accounts] = await Promise.all([
-        connection.getParsedTokenAccountsByOwner(owner, { programId: TOKEN_PROGRAM_ID }),
-        connection.getParsedTokenAccountsByOwner(owner, { programId: TOKEN_2022_PROGRAM_ID }),
+        connection.getParsedTokenAccountsByOwner(ownerPubkey, { programId: TOKEN_PROGRAM_ID }),
+        connection.getParsedTokenAccountsByOwner(ownerPubkey, { programId: TOKEN_2022_PROGRAM_ID }),
       ])
 
       const allAccounts = [
@@ -76,10 +95,15 @@ export function TokenHoldings({ walletAddress }: TokenHoldingsProps) {
       setHoldings(tokens)
     } catch (err) {
       console.error("Failed to fetch tokens:", err)
+      const message =
+        err instanceof Error && (err.message.includes("429") || err.message.toLowerCase().includes("too many requests"))
+          ? "RPC rate limit reached. Please wait a few seconds and refresh."
+          : "Failed to fetch token holdings."
+      setError(message)
     } finally {
       setLoading(false)
     }
-  }, [connection, owner])
+  }, [connection, ownerAddress])
 
   useEffect(() => { fetchTokens() }, [fetchTokens])
 
@@ -107,6 +131,12 @@ export function TokenHoldings({ walletAddress }: TokenHoldingsProps) {
         </Button>
       </CardHeader>
       <CardContent>
+        {error && (
+          <div className="mb-4 rounded-md border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive">
+            {error}
+          </div>
+        )}
+
         {holdings.length === 0 ? (
           <div className="py-8 text-center space-y-2">
             <Coins className="mx-auto h-8 w-8 text-muted-foreground" />

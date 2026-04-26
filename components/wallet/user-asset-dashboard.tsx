@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useConnection, useWallet } from "@solana/wallet-adapter-react";
 import { PublicKey } from "@solana/web3.js";
 import { TOKEN_2022_PROGRAM_ID } from "@solana/spl-token";
@@ -59,8 +59,28 @@ export function UserAssetDashboard({ walletAddress }: UserAssetDashboardProps) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  const ownerAddress = useMemo(() => {
+    if (publicKey) return publicKey.toBase58();
+    return walletAddress ?? null;
+  }, [publicKey, walletAddress]);
+
   const fetchAGTokens = useCallback(async () => {
-    const owner = publicKey ?? new PublicKey(walletAddress);
+    if (!ownerAddress) {
+      setTokens([]);
+      setError(null);
+      setLoading(false);
+      return;
+    }
+
+    let owner: PublicKey;
+    try {
+      owner = new PublicKey(ownerAddress);
+    } catch {
+      setError("Invalid wallet address format.");
+      setTokens([]);
+      setLoading(false);
+      return;
+    }
 
     try {
       setLoading(true);
@@ -82,30 +102,40 @@ export function UserAssetDashboard({ walletAddress }: UserAssetDashboardProps) {
         return;
       }
 
-      // 3. For each token account, fetch the Mint data and decode metadata
-      const agTokens = await Promise.all(
-        nonZeroAccounts.map(async (ta) => {
+      // 3. Batch fetch mint accounts to avoid one-RPC-call-per-token rate limiting
+      const uniqueMints = Array.from(
+        new Set(nonZeroAccounts.map((ta) => ta.account.data.parsed.info.mint as string)),
+      );
+      const mintPubkeys = uniqueMints.map((mint) => new PublicKey(mint));
+      const mintInfoByAddress = new Map<string, Awaited<ReturnType<typeof connection.getAccountInfo>>>();
+
+      const CHUNK_SIZE = 100;
+      for (let i = 0; i < mintPubkeys.length; i += CHUNK_SIZE) {
+        const chunk = mintPubkeys.slice(i, i + CHUNK_SIZE);
+        const chunkInfos = await connection.getMultipleAccountsInfo(chunk);
+        chunkInfos.forEach((accountInfo, index) => {
+          mintInfoByAddress.set(chunk[index].toBase58(), accountInfo);
+        });
+      }
+
+      const agTokens = nonZeroAccounts
+        .map((ta) => {
           try {
             const info = ta.account.data.parsed.info;
             const mintAddress = info.mint as string;
             const balance = Number(info.tokenAmount.uiAmount);
             const decimals = info.tokenAmount.decimals as number;
 
-            // Fetch the raw mint account
-            const mintPubkey = new PublicKey(mintAddress);
-            const mintAccountInfo = await connection.getAccountInfo(mintPubkey);
+            const mintAccountInfo = mintInfoByAddress.get(mintAddress);
             if (!mintAccountInfo) return null;
 
-            // Deserialize Token-2022 metadata from the mint account
             let metadata: TokenMetadata;
             try {
               metadata = unpack(mintAccountInfo.data);
             } catch {
-              // No metadata extension on this mint — skip
               return null;
             }
 
-            // Filter: only AG tokens
             if (metadata.symbol !== "AG") return null;
 
             const valuation = getAdditionalField(metadata, "valuation");
@@ -126,17 +156,21 @@ export function UserAssetDashboard({ walletAddress }: UserAssetDashboardProps) {
           } catch {
             return null;
           }
-        }),
-      );
+        })
+        .filter((t): t is AGToken => t !== null);
 
-      setTokens(agTokens.filter((t): t is AGToken => t !== null));
+      setTokens(agTokens);
     } catch (err) {
       console.error("Failed to fetch AG tokens:", err);
-      setError("Failed to load your property tokens. Please try again.");
+      const message =
+        err instanceof Error && (err.message.includes("429") || err.message.toLowerCase().includes("too many requests"))
+          ? "RPC rate limit reached. Please wait a few seconds and try again."
+          : "Failed to load your property tokens. Please try again.";
+      setError(message);
     } finally {
       setLoading(false);
     }
-  }, [connection, publicKey, walletAddress]);
+  }, [connection, ownerAddress]);
 
   useEffect(() => {
     fetchAGTokens();
