@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/alert-dialog"
 import { Heart, ExternalLink, Trash2, Loader2, AlertTriangle } from "lucide-react"
 import { AuthorizeCustodyButton } from "@/components/listings/authorize-custody-button"
+import { ListMoreTokensDialog } from "@/components/listings/list-more-tokens-dialog"
 import { useEffect, useState } from "react"
 import { useToast } from "@/hooks/use-toast"
 import { ListingStatus } from "@prisma/client"
@@ -29,6 +30,7 @@ export type MyListingCard = {
     totalValue: number
     status: ListingStatus
     bookmarked: boolean
+    maxAdditionalTokens?: number
     /** Server: whether delegate or admin-escrow can cover a full remaining sale. */
     custodyReady?: boolean
     property: {
@@ -52,11 +54,13 @@ export function ListingCard({
     onDelete,
     onBookmarkChange,
     onCustodyCompleted,
+    onListMoreCompleted,
 }: {
     listing: MyListingCard
     onDelete: (id: string) => void
     onBookmarkChange: (id: string, bookmarked: boolean) => void
     onCustodyCompleted?: () => void
+    onListMoreCompleted?: () => void
 }) {
     const { toast } = useToast()
     const [bm, setBm] = useState(listing.bookmarked)
@@ -191,6 +195,14 @@ export function ListingCard({
                             Mint
                         </a>
                     </Button>
+                )}
+                {active && (
+                    <ListMoreTokensDialog
+                        listingId={listing.id}
+                        propertyRef={listing.property.referenceId}
+                        maxAdditionalTokens={Math.max(0, listing.maxAdditionalTokens ?? 0)}
+                        onSuccess={onListMoreCompleted}
+                    />
                 )}
                 {active && (
                     <AlertDialog>

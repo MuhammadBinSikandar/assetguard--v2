@@ -4,8 +4,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { MapPin, ShieldCheck, ExternalLink, Copy, Coins } from "lucide-react"
-import { useCallback, useEffect, useMemo, useState } from "react"
-import { useWallet } from "@solana/wallet-adapter-react"
+import { useMemo, useState } from "react"
 import { BuyTokensModal } from "@/components/property-details/buy-tokens-modal"
 import { useToast } from "@/hooks/use-toast"
 
@@ -28,6 +27,7 @@ type Info = {
   id: string
   title: string
   location: string
+  ownerWalletAddress?: string | null
   price: number
   verified: boolean
   roi: number
@@ -37,6 +37,7 @@ type Info = {
     listingId: string
     referenceId: string
     status: "ACTIVE" | "SOLD"
+    sellerWalletAddress?: string | null
     tokensListed: number
     tokensRemaining: number
     pricePerToken: number
@@ -52,35 +53,14 @@ type Info = {
 export function PropertyStickyCard({ property }: { property: Info }) {
   const [open, setOpen] = useState(false)
   const { toast } = useToast()
-  const { publicKey, connected } = useWallet()
-  const [linkedWallet, setLinkedWallet] = useState<string | null>(null)
-
-  const loadLinkedWallet = useCallback(async () => {
-    try {
-      const res = await fetch("/api/auth/me", { credentials: "include" })
-      if (!res.ok) return
-      const json = await res.json()
-      const w = json.data?.user?.walletAddress as string | null | undefined
-      setLinkedWallet(w && w.length > 0 ? w : null)
-    } catch {
-      /* ignore */
-    }
-  }, [])
-
-  useEffect(() => {
-    void loadLinkedWallet()
-  }, [loadLinkedWallet])
 
   const fullWalletAddress = useMemo(() => {
-    if (publicKey) return publicKey.toBase58()
-    return linkedWallet
-  }, [publicKey, linkedWallet])
+    return property.listingOffer?.sellerWalletAddress ?? property.ownerWalletAddress ?? null
+  }, [property.listingOffer?.sellerWalletAddress, property.ownerWalletAddress])
 
   const userWalletDisplay = fullWalletAddress
     ? shortenAddress(fullWalletAddress)
-    : connected
-      ? "…"
-      : "Connect or link wallet"
+    : "Not available"
 
   const handleVerifyOwnership = () => {
     if (!fullWalletAddress) {
@@ -167,7 +147,7 @@ export function PropertyStickyCard({ property }: { property: Info }) {
           </div>
 
           <div className="space-y-2 rounded-md bg-muted/50 p-3">
-            <div className="text-xs font-medium text-muted-foreground">Your Wallet Address</div>
+            <div className="text-xs font-medium text-muted-foreground">Owner Wallet Address</div>
             <div className="flex items-center gap-2">
               <code className="flex-1 text-sm font-mono break-all" title={fullWalletAddress ?? undefined}>
                 {userWalletDisplay}
@@ -189,7 +169,7 @@ export function PropertyStickyCard({ property }: { property: Info }) {
               onClick={handleVerifyOwnership}
             >
               <ExternalLink className="mr-2 h-4 w-4" />
-              Verify tokens on Solana Explorer (devnet)
+              Verify owner tokens on Solana Explorer (devnet)
             </Button>
           </div>
 

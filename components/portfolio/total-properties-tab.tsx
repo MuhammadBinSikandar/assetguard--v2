@@ -31,6 +31,7 @@ type PropertyItem = {
   tokenSupply: number | null
   pricePerToken: number | null
   tokenSymbol: string
+  currentWalletTokens: number | null
   listing: { id: string; status: string } | null
   _count: { documents: number }
 }
@@ -245,6 +246,11 @@ export function TotalPropertiesTab() {
                       <p className="mt-0.5 text-xs text-muted-foreground">
                         {property.tokenSupply != null ? "Minted supply" : "Standard offering (1,000)"}
                       </p>
+                      {property.currentWalletTokens != null ? (
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          Current wallet balance: {property.currentWalletTokens.toLocaleString()}
+                        </p>
+                      ) : null}
                     </div>
 
                     <div className="mt-3 flex flex-wrap items-center gap-2">
