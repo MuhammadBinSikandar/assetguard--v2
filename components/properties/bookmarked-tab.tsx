@@ -1,99 +1,122 @@
 "use client"
 
-import { useMemo, useState } from "react"
-import { PropertyCard } from "@/components/properties/property-card"
-import { PropertyListItem } from "@/components/properties/property-list-item"
+import { useCallback, useEffect, useMemo, useState } from "react"
+import { MarketplaceListingCard, type MarketplaceListing } from "@/components/properties/marketplace-listing-card"
 import { SortAndView } from "@/components/properties/sort-and-view"
-import {
-    Pagination,
-    PaginationContent,
-    PaginationItem,
-    PaginationNext,
-    PaginationPrevious,
-} from "@/components/ui/pagination"
 import { Card, CardContent } from "@/components/ui/card"
-import { Bookmark } from "lucide-react"
-
-type Property = {
-    id: string
-    title: string
-    location: string
-    price: number
-    verified: boolean
-    type: "Residential" | "Commercial" | "Land"
-    size: string
-    roi: number
-    progress: number
-}
-
-// Mock bookmarked properties
-const BOOKMARKED_PROPERTIES: Property[] = [
-    {
-        id: "p1",
-        title: "Marina View Residence",
-        location: "Dubai Marina",
-        price: 125000,
-        verified: true,
-        type: "Residential",
-        size: "1,200 sqft",
-        roi: 6.2,
-        progress: 72,
-    },
-    {
-        id: "p4",
-        title: "Palm Jumeirah Villa",
-        location: "Palm Jumeirah",
-        price: 980000,
-        verified: true,
-        type: "Residential",
-        size: "5,800 sqft",
-        roi: 4.8,
-        progress: 10,
-    },
-]
+import { Button } from "@/components/ui/button"
+import { Bookmark, Loader2 } from "lucide-react"
+import { useToast } from "@/hooks/use-toast"
+import Link from "next/link"
+import { BuyTokensModal } from "@/components/property-details/buy-tokens-modal"
+import { resolvePropertyTokenSupply } from "@/lib/property-tokens"
 
 export function BookmarkedTab() {
+    const { toast } = useToast()
     const [sort, setSort] = useState("recent")
     const [view, setView] = useState<"grid" | "list">("grid")
     const [page, setPage] = useState(1)
     const [perPage, setPerPage] = useState(6)
+    const [listings, setListings] = useState<MarketplaceListing[]>([])
+    const [loading, setLoading] = useState(true)
+    const [authed, setAuthed] = useState<boolean | null>(null)
+    const [buyOpen, setBuyOpen] = useState(false)
+    const [buyListing, setBuyListing] = useState<MarketplaceListing | null>(null)
+
+    const load = useCallback(async () => {
+        setLoading(true)
+        try {
+            const res = await fetch("/api/listings/marketplace?bookmarkedOnly=1", { credentials: "include" })
+            if (res.status === 401) {
+                setAuthed(false)
+                setListings([])
+                return
+            }
+            if (!res.ok) {
+                toast({ title: "Error", description: "Could not load bookmarks.", variant: "destructive" })
+                return
+            }
+            setAuthed(true)
+            const json = await res.json()
+            if (json.success) setListings(json.data)
+        } catch {
+            toast({ title: "Error", description: "Network error.", variant: "destructive" })
+        } finally {
+            setLoading(false)
+        }
+    }, [toast])
+
+    useEffect(() => {
+        void load()
+    }, [load])
+
+    const onInvest = (listing: MarketplaceListing) => {
+        setBuyListing(listing)
+        setBuyOpen(true)
+    }
 
     const sorted = useMemo(() => {
-        const arr = [...BOOKMARKED_PROPERTIES]
+        const arr = [...listings]
         switch (sort) {
             case "price-asc":
-                arr.sort((a, b) => a.price - b.price)
+                arr.sort((a, b) => a.totalValue - b.totalValue)
                 break
             case "price-desc":
-                arr.sort((a, b) => b.price - a.price)
+                arr.sort((a, b) => b.totalValue - a.totalValue)
                 break
             case "roi-desc":
-                arr.sort((a, b) => b.roi - a.roi)
                 break
             case "popular":
-                arr.sort((a, b) => b.progress - a.progress)
+                arr.sort((a, b) => b.bookmarkCount - a.bookmarkCount)
                 break
             default:
-                // recent - leave order as-is (mock)
+                arr.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
                 break
         }
         return arr
-    }, [sort])
+    }, [listings, sort])
 
     const totalPages = Math.max(1, Math.ceil(sorted.length / perPage))
     const start = (page - 1) * perPage
     const items = sorted.slice(start, start + perPage)
 
-    if (BOOKMARKED_PROPERTIES.length === 0) {
+    if (loading && authed === null) {
+        return (
+            <div className="flex justify-center py-20">
+                <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+            </div>
+        )
+    }
+
+    if (authed === false) {
         return (
             <Card>
                 <CardContent className="flex flex-col items-center justify-center py-16">
                     <div className="mb-4 rounded-full bg-muted p-4">
                         <Bookmark className="h-8 w-8 text-muted-foreground" />
                     </div>
-                    <h3 className="mb-2 text-lg font-semibold">No Bookmarked Properties</h3>
+                    <h3 className="mb-2 text-lg font-semibold">Sign in to see bookmarks</h3>
+                    <p className="text-center text-sm text-muted-foreground max-w-sm mb-4">
+                        Log in to view listings you have saved.
+                    </p>
+                    <Button asChild>
+                        <Link href="/login">Log in</Link>
+                    </Button>
+                </CardContent>
+            </Card>
+        )
+    }
+
+    if (listings.length === 0) {
+        return (
+            <Card>
+                <CardContent className="flex flex-col items-center justify-center py-16">
+                    <div className="mb-4 rounded-full bg-muted p-4">
+                        <Bookmark className="h-8 w-8 text-muted-foreground" />
+                    </div>
+                    <h3 className="mb-2 text-lg font-semibold">No bookmarked listings</h3>
                     <p className="text-center text-sm text-muted-foreground max-w-sm">
-                        You haven't bookmarked any properties yet. Browse properties and click the bookmark icon to save them here.
+                        Browse the marketplace and use the heart icon to save listings here.
                     </p>
                 </CardContent>
             </Card>
@@ -103,7 +126,7 @@ export function BookmarkedTab() {
     return (
         <div className="space-y-4">
             <header className="flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
-                <div className="text-sm text-muted-foreground">{sorted.length} bookmarked properties</div>
+                <div className="text-sm text-muted-foreground">{sorted.length} bookmarked</div>
                 <SortAndView
                     sort={sort}
                     setSort={setSort}
@@ -115,47 +138,71 @@ export function BookmarkedTab() {
             </header>
 
             {view === "grid" ? (
-                <div aria-label="Bookmarked properties grid" className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                    {items.map((p) => (
-                        <PropertyCard key={p.id} p={p} />
+                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3" aria-label="Bookmarked grid">
+                    {items.map((l) => (
+                        <MarketplaceListingCard
+                            key={l.id}
+                            listing={l}
+                            isLoggedIn
+                            onInvest={onInvest}
+                        />
                     ))}
                 </div>
             ) : (
-                <div aria-label="Bookmarked properties list" className="space-y-3">
-                    {items.map((p) => (
-                        <PropertyListItem key={p.id} p={p} />
+                <div className="space-y-3" aria-label="Bookmarked list">
+                    {items.map((l) => (
+                        <MarketplaceListingCard
+                            key={l.id}
+                            listing={l}
+                            isLoggedIn
+                            onInvest={onInvest}
+                        />
                     ))}
                 </div>
             )}
 
             {sorted.length > perPage && (
-                <div className="flex items-center justify-between">
-                    <div className="text-xs text-muted-foreground">
-                        Showing {items.length} of {sorted.length}
+                <div className="flex items-center justify-between text-xs text-muted-foreground">
+                    <span>
+                        Page {page} of {totalPages}
+                    </span>
+                    <div className="flex gap-2">
+                        <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            disabled={page <= 1}
+                            onClick={() => setPage((p) => Math.max(1, p - 1))}
+                        >
+                            Previous
+                        </Button>
+                        <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            disabled={page >= totalPages}
+                            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                        >
+                            Next
+                        </Button>
                     </div>
-                    <Pagination>
-                        <PaginationContent>
-                            <PaginationItem>
-                                <PaginationPrevious
-                                    href="#"
-                                    onClick={(e) => {
-                                        e.preventDefault()
-                                        setPage((p) => Math.max(1, p - 1))
-                                    }}
-                                />
-                            </PaginationItem>
-                            <PaginationItem>
-                                <PaginationNext
-                                    href="#"
-                                    onClick={(e) => {
-                                        e.preventDefault()
-                                        setPage((p) => Math.min(totalPages, p + 1))
-                                    }}
-                                />
-                            </PaginationItem>
-                        </PaginationContent>
-                    </Pagination>
                 </div>
+            )}
+
+            {buyListing && (
+                <BuyTokensModal
+                    open={buyOpen}
+                    onOpenChange={(o) => {
+                        setBuyOpen(o)
+                        if (!o) setBuyListing(null)
+                    }}
+                    listingId={buyListing.id}
+                    propertyTitle={buyListing.property.propertyAddress}
+                    referenceId={buyListing.property.referenceId}
+                    pricePerTokenUsd={buyListing.pricePerToken}
+                    tokensMax={buyListing.tokensRemaining}
+                    totalFractions={resolvePropertyTokenSupply(buyListing.property.tokenSupply)}
+                />
             )}
         </div>
     )
