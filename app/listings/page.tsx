@@ -162,6 +162,7 @@ export default function ListingsPage() {
                                             onDelete={handleDelete}
                                             onBookmarkChange={handleBookmarkChange}
                                             onCustodyCompleted={load}
+                                            onListMoreCompleted={load}
                                         />
                                     ))}
                                 </div>
@@ -190,6 +191,7 @@ export default function ListingsPage() {
                                             onDelete={handleDelete}
                                             onBookmarkChange={handleBookmarkChange}
                                             onCustodyCompleted={load}
+                                            onListMoreCompleted={load}
                                         />
                                     ))}
                                 </div>
@@ -218,6 +220,7 @@ export default function ListingsPage() {
                                             onDelete={handleDelete}
                                             onBookmarkChange={handleBookmarkChange}
                                             onCustodyCompleted={load}
+                                            onListMoreCompleted={load}
                                         />
                                     ))}
                                 </div>
