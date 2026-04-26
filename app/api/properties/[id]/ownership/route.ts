@@ -8,6 +8,7 @@ import {
   solanaAddressExplorerUrl,
   solanaClusterFromNetwork,
 } from '@/lib/solana/explorer-links';
+import { getWalletMintBalance } from '@/lib/solana/token-balances';
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -83,11 +84,13 @@ export async function GET(_req: NextRequest, ctx: Row) {
     const listingShareFor = (userId: string) =>
       listing && listing.sellerId === userId ? listing.tokensRemaining : 0;
 
-    const ownersOut = owners.map((o) => {
+    const ownersOut = await Promise.all(owners.map(async (o) => {
       const w = o.user.walletAddress;
       const { wallet: walletExplorerUrl, tokenAccount: tokenAccountExplorerUrl } = explorerForWallet(w);
       const fromListing = listingShareFor(o.user.id);
-      const totalTokens = o.tokensOwned + fromListing;
+      const dbTotalTokens = o.tokensOwned + fromListing;
+      const onChainBalance = await getWalletMintBalance(w, mint);
+      const totalTokens = onChainBalance != null ? Math.floor(onChainBalance) : dbTotalTokens;
       return {
         id: o.id,
         userId: o.user.id,
@@ -102,13 +105,15 @@ export async function GET(_req: NextRequest, ctx: Row) {
         acquiredAt: o.acquiredAt.toISOString(),
         isRegistrant: o.user.id === property.ownerId,
       };
-    });
+    }));
 
     const uids = new Set(ownersOut.map((r) => r.userId));
     if (!uids.has(property.ownerId) && property.owner) {
       const w = property.owner.walletAddress;
       const { wallet: walletExplorerUrl, tokenAccount: tokenAccountExplorerUrl } = explorerForWallet(w);
       const tr = listingShareFor(property.ownerId);
+      const onChainBalance = await getWalletMintBalance(w, mint);
+      const totalTokens = onChainBalance != null ? Math.floor(onChainBalance) : tr;
       ownersOut.unshift({
         id: `registrant-${property.ownerId}`,
         userId: property.owner.id,
@@ -118,8 +123,8 @@ export async function GET(_req: NextRequest, ctx: Row) {
         tokenAccountExplorerUrl,
         tokensFromPurchases: 0,
         tokensInListing: tr,
-        tokensOwned: tr,
-        ownershipPercent: supply > 0 ? (tr / supply) * 100 : 0,
+        tokensOwned: totalTokens,
+        ownershipPercent: supply > 0 ? (totalTokens / supply) * 100 : 0,
         acquiredAt: property.submittedAt.toISOString(),
         isRegistrant: true,
       });

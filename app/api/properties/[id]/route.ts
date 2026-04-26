@@ -31,6 +31,7 @@ export async function GET(_request: NextRequest, context: RouteContext) {
         lot: true,
         propertyAddress: true,
         ownerName: true,
+        walletAddress: true,
         propertyType: true,
         taxClass: true,
         yearBuilt: true,
@@ -57,10 +58,16 @@ export async function GET(_request: NextRequest, context: RouteContext) {
           select: {
             id: true,
             status: true,
+            sellerId: true,
             tokensListed: true,
             tokensRemaining: true,
             pricePerToken: true,
             totalValue: true,
+            seller: {
+              select: {
+                walletAddress: true,
+              },
+            },
           },
         },
       },
