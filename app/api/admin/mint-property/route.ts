@@ -31,14 +31,14 @@ import { z } from 'zod';
 import { getUserFromAccessToken } from '@/lib/auth';
 import { getAdminKeypair, getSolanaRpcUrl } from '@/lib/solana/admin-keypair';
 import prisma from '@/db/prismaClient';
+import { effectivePropertyValuationUsd } from '@/lib/property-valuation';
+import { FIXED_PROPERTY_TOKEN_SUPPLY } from '@/lib/property-tokens';
 
 // ── Input Validation ────────────────────────────────────────────────────────
 
 const mintPropertySchema = z.object({
   propertyId: z.string().uuid('Invalid property ID format'),
   userWalletAddress: z.string().min(32, 'Invalid wallet address').max(44, 'Invalid wallet address'),
-  totalValuation: z.number().positive('Valuation must be positive'),
-  tokenSupply: z.number().int().positive('Token supply must be a positive integer'),
 });
 
 // ── POST /api/admin/mint-property ───────────────────────────────────────────
@@ -75,7 +75,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { propertyId, userWalletAddress, totalValuation, tokenSupply } = validation.data;
+    const { propertyId, userWalletAddress } = validation.data;
 
     // ── 3. Validate User Wallet Address ────────────────────────────────────
     let userWallet: PublicKey;
@@ -94,10 +94,14 @@ export async function POST(request: NextRequest) {
       select: {
         id: true,
         referenceId: true,
+        borough: true,
+        block: true,
+        lot: true,
         status: true,
         mintAddress: true,
         walletAddress: true,
         estimatedPriceUSD: true,
+        verifiedPriceUSD: true,
       },
     });
 
@@ -121,6 +125,28 @@ export async function POST(request: NextRequest) {
           success: false,
           message: 'Property tokens have already been minted.',
           mintAddress: property.mintAddress,
+        },
+        { status: 409 },
+      );
+    }
+
+    const duplicate = await prisma.property.findFirst({
+      where: {
+        borough: property.borough,
+        block: property.block,
+        lot: property.lot,
+        mintAddress: { not: null },
+        id: { not: propertyId },
+      },
+      select: { id: true, referenceId: true, mintAddress: true },
+    });
+
+    if (duplicate) {
+      return NextResponse.json(
+        {
+          success: false,
+          message: `This property location has already been tokenized. Reference: ${duplicate.referenceId}`,
+          existingMintAddress: duplicate.mintAddress,
         },
         { status: 409 },
       );
@@ -161,19 +187,27 @@ export async function POST(request: NextRequest) {
     const mint = mintKeypair.publicKey;
 
     // ── 7. Prepare Token Metadata ──────────────────────────────────────────
-    const pricePerToken = totalValuation / tokenSupply;
-    const decimals = 0; // Real estate tokens: 1 token = 1 share
+    const tokenSupply = FIXED_PROPERTY_TOKEN_SUPPLY;
+    const propertyValuation = effectivePropertyValuationUsd(
+      property.estimatedPriceUSD,
+      property.verifiedPriceUSD,
+    );
+    const pricePerToken = propertyValuation / tokenSupply;
+    const decimals = 6; // Real estate tokens: 1 token = 1 share
 
     const metadata: TokenMetadata = {
       mint: mint,
-      name: `AG Property #${property.referenceId}`,
+      name: 'AG',
       symbol: 'AG',
-      uri: '', // Can be updated later with off-chain metadata
+      uri: 'https://res.cloudinary.com/ddudykruo/raw/upload/v1777141210/ag-token-metadata_ot1bb4.json',
       additionalMetadata: [
         ['property_id', propertyId],
-        ['valuation', totalValuation.toString()],
+        ['valuation', propertyValuation.toString()],
         ['price_per_token', pricePerToken.toFixed(2)],
         ['reference_id', property.referenceId],
+        ['borough', property.borough],
+        ['block', property.block],
+        ['lot', property.lot],
       ],
     };
 
@@ -247,32 +281,33 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 9f. Get or Create Associated Token Account (ATA) for User
-    const userAta = getAssociatedTokenAddressSync(
+    // 9f–9g. Mint full supply to the **platform (admin) ATA** for automatic marketplace custody.
+    // SPL `Approve` requires the token *owner* to sign, so we cannot delegate from the owner's
+    // wallet in this admin-only tx. Holding the supply on the admin ATA lets `POST .../buy`
+    // transfer to buyers without a separate seller authorization (see `resolveCustodyForTransfer`).
+    const adminAta = getAssociatedTokenAddressSync(
       mint,
-      userWallet,
-      false, // allowOwnerOffCurve
+      adminKeypair.publicKey,
+      false,
       TOKEN_2022_PROGRAM_ID,
     );
 
-    // Always try to create ATA (instruction will be no-op if it exists)
     transaction.add(
       createAssociatedTokenAccountInstruction(
-        adminKeypair.publicKey, // payer
-        userAta,
-        userWallet, // owner
+        adminKeypair.publicKey,
+        adminAta,
+        adminKeypair.publicKey,
         mint,
         TOKEN_2022_PROGRAM_ID,
       ),
     );
 
-    // 9g. Mint Tokens to User's ATA
     transaction.add(
       createMintToInstruction(
         mint,
-        userAta,
-        adminKeypair.publicKey, // mint authority
-        BigInt(tokenSupply), // amount (with 0 decimals, this is exact token count)
+        adminAta,
+        adminKeypair.publicKey,
+        BigInt(tokenSupply) * BigInt(10 ** decimals),
         [],
         TOKEN_2022_PROGRAM_ID,
       ),
@@ -360,6 +395,7 @@ export async function POST(request: NextRequest) {
         mintSignature: signature,
         mintedAt: new Date(),
         tokenSupply: tokenSupply,
+        pricePerToken: pricePerToken,
       },
     });
 
@@ -373,9 +409,13 @@ export async function POST(request: NextRequest) {
           mintAddress,
           signature,
           tokenSupply,
-          totalValuation,
+          totalValuation: propertyValuation,
           pricePerToken,
+          borough: property.borough,
+          block: property.block,
+          lot: property.lot,
           userWallet: userWalletAddress,
+          custodyAta: adminAta.toBase58(),
         }),
         success: true,
       },
@@ -385,13 +425,15 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       {
         success: true,
-        message: 'Property tokens minted successfully.',
+        message:
+          'Property tokens minted to platform custody. Listings and purchases can settle without a seller Approve transaction.',
         data: {
           mintAddress,
           signature,
           tokenSupply,
           pricePerToken,
-          userAta: userAta.toBase58(),
+          custodyAta: adminAta.toBase58(),
+          ownerWallet: userWallet.toBase58(),
           explorerUrl: `https://explorer.solana.com/address/${mintAddress}?cluster=devnet`,
           txUrl: `https://explorer.solana.com/tx/${signature}?cluster=devnet`,
         },
