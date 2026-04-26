@@ -10,7 +10,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { TokenHoldings } from "@/components/wallet/token-holdings"
 import { TransactionHistory } from "@/components/wallet/transaction-history"
 import { WalletLinker } from "@/components/wallet/wallet-linker"
-import { UserAssetDashboard } from "@/components/wallet/user-asset-dashboard"
 import { useIsMobile } from "@/components/ui/use-mobile"
 import { useAppSelector } from "@/store/redux/store"
 import { selectIsHydrated } from "@/store/redux/userSlice"
@@ -121,9 +120,7 @@ function WalletPageContent() {
               <Tabs defaultValue="overview" className="space-y-4">
                 <TabsList>
                   <TabsTrigger value="overview">Overview</TabsTrigger>
-                  <TabsTrigger value="holdings">AG Tokens</TabsTrigger>
                   <TabsTrigger value="transactions">Transactions</TabsTrigger>
-                  <TabsTrigger value="activity">Activity</TabsTrigger>
                 </TabsList>
 
                 <TabsContent value="overview" className="space-y-6">
@@ -135,19 +132,8 @@ function WalletPageContent() {
                   <TokenHoldings walletAddress={linkedWallet} />
                 </TabsContent>
 
-                <TabsContent value="holdings" className="space-y-6">
-                  {/* On-chain AG Token-2022 assets */}
-                  <UserAssetDashboard walletAddress={linkedWallet} />
-                </TabsContent>
-
                 <TabsContent value="transactions">
                   <TransactionHistory walletAddress={linkedWallet} />
-                </TabsContent>
-
-                <TabsContent value="activity">
-                  <div className="text-sm text-muted-foreground">
-                    No recent on-chain activity. Start by depositing funds or purchasing a property fraction.
-                  </div>
                 </TabsContent>
               </Tabs>
             </>
