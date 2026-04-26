@@ -52,6 +52,11 @@ model User {
   auditLogs             AuditLog[]
   kycRecord             KYCRecord?
   properties            Property[]
+  propertyListings      PropertyListing[]
+  listingBookmarks      ListingBookmark[]
+  buyerPurchases        TokenPurchase[]  @relation("BuyerPurchases")
+  sellerPurchases       TokenPurchase[]  @relation("SellerPurchases")
+  propertyOwnerships    PropertyOwnership[]
 
   @@index([email])
   @@index([kycStatus])
@@ -65,7 +70,7 @@ model KYCRecord {
   userId        String    @unique // 1-to-1 relation
   fullName      String
   idNumber      String
-  documentUrls  String[]  // Relative paths: /uploads/kyc/file.png (swappable to IPFS hashes later)
+  documentUrls  String[]  // Pinata private file CIDs (never store signed gateway URLs—they expire)
   submittedAt   DateTime  @default(now())
   reviewedAt    DateTime?
   reviewedBy    String?   // Admin user ID who reviewed
@@ -206,6 +211,8 @@ model Property {
 
   // Valuation
   estimatedPriceUSD   Float
+  // Admin override when user-submitted estimate is wrong; minting & displays use this when set
+  verifiedPriceUSD    Float?
 
   // Step 4 — Wallet (ALWAYS read from authenticated session, never from client)
   walletAddress       String
@@ -225,12 +232,17 @@ model Property {
   mintSignature       String?        // Transaction signature from minting
   mintedAt            DateTime?      // When tokens were minted
   tokenSupply         Int?           // Total token supply minted
+  pricePerToken       Float?         // USD per token at mint (valuation / supply)
 
   // Relations
   owner               User           @relation(fields: [ownerId], references: [id], onDelete: Cascade)
   ownerId             String
   documents           PropertyDocument[]
   statusHistory       PropertyStatusHistory[]
+  verificationData    PropertyVerificationData?
+  listings            PropertyListing[]
+  tokenPurchases      TokenPurchase[]
+  propertyOwnerships  PropertyOwnership[]
 
   @@unique([borough, block, lot]) // Prevent duplicate BBL registration
   @@index([ownerId])
@@ -270,4 +282,141 @@ model PropertyStatusHistory {
 
   @@index([propertyId])
   @@map("property_status_history")
+}
+
+// ── Scraping / Verification ─────────────────────────────────────────────────
+
+enum ScrapeStatus {
+  PENDING
+  SUCCESS
+  FAILED
+}
+
+model PropertyVerificationData {
+  id               String       @id @default(uuid())
+  property         Property     @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  propertyId       String       @unique // 1-to-1 relation
+  scrapedAt        DateTime?
+  scrapeStatus     ScrapeStatus @default(PENDING)
+  scrapeError      String?
+
+  // 13 scraped fields — all nullable strings
+  address          String?
+  ownerName        String?
+  propertyType     String?
+  taxClass         String?
+  yearBuilt        String?
+  numberOfStories  String?
+  totalArea        String?
+  residentialUnits String?
+  commercialUnits  String?
+  frontage         String?
+  landDepth        String?
+  landArea         String?
+  estimatedPrice   String?
+
+  @@index([propertyId])
+  @@map("property_verification_data")
+}
+
+// ── Property Listings (marketplace) ───────────────────────────────────────
+
+enum ListingStatus {
+  ACTIVE
+  SOLD
+}
+
+enum PurchaseStatus {
+  PENDING
+  ESCROW_RECEIVED
+  COMPLETED
+  FAILED
+}
+
+model PropertyListing {
+  id               String         @id @default(uuid())
+  propertyId       String
+  property         Property       @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  sellerId         String
+  seller           User           @relation(fields: [sellerId], references: [id], onDelete: Cascade)
+  tokensListed     Int
+  /** Remaining sellable tokens; set equal to tokensListed on creation, decremented on each sale. */
+  tokensRemaining  Int  @default(0)
+  pricePerToken    Float
+  totalValue       Float
+  status           ListingStatus  @default(ACTIVE)
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+  bookmarks        ListingBookmark[]
+  purchases        TokenPurchase[]
+
+  @@unique([propertyId, sellerId])
+  @@index([propertyId])
+  @@index([sellerId])
+  @@index([status])
+  @@map("property_listings")
+}
+
+model TokenPurchase {
+  id                    String         @id @default(uuid())
+  listingId             String
+  listing               PropertyListing @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  buyerId               String
+  buyer                 User           @relation("BuyerPurchases", fields: [buyerId], references: [id], onDelete: Cascade)
+  sellerId              String
+  seller                User           @relation("SellerPurchases", fields: [sellerId], references: [id], onDelete: Cascade)
+  propertyId            String
+  property              Property       @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  tokensBought          Int
+  pricePerToken         Float
+  totalSolPaid          Float
+  platformFeeSol        Float
+  sellerReceivedSol     Float
+  solPriceUsdAtPurchase Float
+  buyerWallet           String
+  sellerWallet          String
+  solTransferTxHash     String?       @unique
+  tokenTransferTxHash   String?
+  solReleaseTxHash      String?
+  refundTxHash          String?
+  refundedAt            DateTime?
+  status                PurchaseStatus @default(PENDING)
+  createdAt             DateTime       @default(now())
+  updatedAt             DateTime       @updatedAt
+
+  @@index([propertyId])
+  @@index([buyerId])
+  @@index([sellerId])
+  @@index([listingId])
+  @@index([status])
+  @@map("token_purchases")
+}
+
+model PropertyOwnership {
+  id            String   @id @default(uuid())
+  propertyId    String
+  property      Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  userId        String
+  user          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokensOwned   Int
+  acquiredAt    DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@unique([propertyId, userId])
+  @@index([userId])
+  @@index([propertyId])
+  @@map("property_ownerships")
+}
+
+model ListingBookmark {
+  id        String          @id @default(uuid())
+  userId    String
+  user      User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  listingId String
+  listing   PropertyListing @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  createdAt DateTime        @default(now())
+
+  @@unique([userId, listingId])
+  @@index([listingId])
+  @@map("listing_bookmarks")
 }
