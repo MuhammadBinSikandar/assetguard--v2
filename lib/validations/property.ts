@@ -53,6 +53,17 @@ const flexiblePropertyType = z
   })
   .pipe(propertyTypeEnum);
 
+/** FormData / spread can leave strings; coerce to int and clamp negatives to 0. */
+function optionalNonNegativeInt() {
+  return z.preprocess((val: unknown) => {
+    if (val === undefined || val === null) return undefined;
+    if (typeof val === 'string' && val.trim() === '') return undefined;
+    const n = typeof val === 'number' ? val : Number(val);
+    if (!Number.isFinite(n)) return undefined;
+    return Math.max(0, Math.trunc(n));
+  }, z.number().int().optional());
+}
+
 export const propertyRegistrationSchema = z.object({
   // Step 1 — NYC BBL
   borough: flexibleBorough,
@@ -72,35 +83,24 @@ export const propertyRegistrationSchema = z.object({
     .min(1600, 'Year built must be at least 1600')
     .max(currentYear, `Year built cannot exceed ${currentYear}`)
     .optional(),
-  stories: z.number().int().min(1, 'Stories must be at least 1').optional(),
+  stories: z.number().int().min(0, 'Stories cannot be negative').optional(),
   totalAreaSqFt: z
     .number()
-    .positive('Total area must be positive')
+    .min(0, 'Total area cannot be negative')
     .optional(),
-  commercialUnits: z
-    .number()
-    .int()
-    .min(0, 'Commercial units cannot be negative')
-    .optional(),
-  residentialUnits: z
-    .number()
-    .int()
-    .min(0, 'Residential units cannot be negative')
-    .optional(),
+  commercialUnits: optionalNonNegativeInt(),
+  residentialUnits: optionalNonNegativeInt(),
 
   // Land Information (optional)
-  frontage: z.number().positive('Frontage must be positive').optional(),
-  depth: z.number().positive('Depth must be positive').optional(),
+  frontage: z.number().min(0, 'Frontage cannot be negative').optional(),
+  depth: z.number().min(0, 'Depth cannot be negative').optional(),
   landAreaSqFt: z
     .number()
-    .positive('Land area must be positive')
+    .min(0, 'Land area cannot be negative')
     .optional(),
 
   // Valuation
-  estimatedPriceUSD: z
-    .number()
-    .positive('Estimated price must be positive')
-    .min(1, 'Estimated price must be at least 1'),
+  estimatedPriceUSD: z.number().min(0, 'Estimated price cannot be negative'),
 });
 
 export type PropertyRegistrationInput = z.infer<typeof propertyRegistrationSchema>;
