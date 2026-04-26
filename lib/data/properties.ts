@@ -1,5 +1,8 @@
 import prisma from '@/db/prismaClient';
 import { PropertyStatus, Prisma } from '@prisma/client';
+import { effectivePropertyValuationUsd } from '@/lib/property-valuation';
+
+export { effectivePropertyValuationUsd };
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -54,6 +57,7 @@ export async function getAdminPropertiesList(filters: AdminPropertiesFilters) {
         status: true,
         submittedAt: true,
         estimatedPriceUSD: true,
+        verifiedPriceUSD: true,
         walletAddress: true,
         _count: { select: { documents: true } },
       },
@@ -78,6 +82,7 @@ export async function getAdminPropertiesList(filters: AdminPropertiesFilters) {
       status: p.status,
       submittedAt: p.submittedAt,
       estimatedPriceUSD: p.estimatedPriceUSD,
+      verifiedPriceUSD: p.verifiedPriceUSD,
       walletAddress: p.walletAddress,
       documentCount: p._count.documents,
     })),
@@ -118,6 +123,7 @@ export async function getAdminPropertyDetail(id: string) {
           kycStatus: true,
         },
       },
+      verificationData: true,
     },
   });
 
@@ -192,13 +198,25 @@ export async function updatePropertyStatus(
       });
     }
 
-    // Stub token minting
-    if (newStatus === 'APPROVED') {
-      console.log(`[STUB] Mint tokens for property ${id}`);
-    }
-
     return property;
   });
 
   return updated;
+}
+
+// ── updatePropertyVerifiedPrice ───────────────────────────────────────────────
+
+export async function updatePropertyVerifiedPrice(
+  id: string,
+  verifiedPriceUSD: number | null,
+) {
+  return prisma.property.update({
+    where: { id },
+    data: { verifiedPriceUSD },
+    select: {
+      id: true,
+      estimatedPriceUSD: true,
+      verifiedPriceUSD: true,
+    },
+  });
 }
