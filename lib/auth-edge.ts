@@ -2,7 +2,7 @@
  * Edge-compatible authentication utilities
  * Uses jose library which works in Edge Runtime
  */
-import { jwtVerify } from 'jose';
+import { jwtVerify } from 'jose/jwt/verify';
 import type { DecodedAccessToken } from '@/db/drizzle/models';
 
 const JWT_ACCESS_SECRET = process.env.JWT_ACCESS_PRIVATE_KEY || 'development-access-secret-change-in-production';
