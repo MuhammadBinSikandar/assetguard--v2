@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import Link from "next/link"
 import { CheckCircle2, Clock, XCircle, Loader2, Building2, Search } from "lucide-react"
+import { effectivePropertyValuationUsd } from "@/lib/property-valuation"
 
 type PropertyItem = {
     id: string
@@ -20,6 +21,7 @@ type PropertyItem = {
     submittedAt: string
     reviewedAt: string | null
     estimatedPriceUSD: number
+    verifiedPriceUSD: number | null
     walletAddress: string
     adminNotes: string | null
     _count: { documents: number }
@@ -209,7 +211,14 @@ function PropertyCard({ property }: { property: PropertyItem }) {
                     </div>
                     <div className="flex justify-between">
                         <span className="text-muted-foreground">Est. Value</span>
-                        <span className="font-semibold">{fmtUSD(property.estimatedPriceUSD)}</span>
+                        <span className="font-semibold">
+                            {fmtUSD(
+                                effectivePropertyValuationUsd(
+                                    property.estimatedPriceUSD,
+                                    property.verifiedPriceUSD,
+                                ),
+                            )}
+                        </span>
                     </div>
                     <div className="flex justify-between">
                         <span className="text-muted-foreground">Submitted</span>
