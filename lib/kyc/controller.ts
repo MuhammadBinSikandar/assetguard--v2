@@ -66,8 +66,8 @@ export async function handleSubmitKYC(request: Request): Promise<NextResponse> {
       );
     }
 
-    // 3. Collect the relative paths stored on disk
-    const documentUrls = files.map((f) => f.relativePath);
+    // 3. Persist Pinata CIDs only (signed URLs expire; admins fetch fresh URLs via /api/admin/kyc-document)
+    const documentUrls = files.map((f) => f.cid);
 
     // 4. Persist to database
     const result = await submitKYCService({

@@ -19,6 +19,7 @@ export interface SubmitKYCParams {
   userId: string;
   fullName: string;
   idNumber: string;
+  /** Pinata private file CIDs (stored in `KYCRecord.documentUrls`). */
   documentUrls: string[];
 }
 

@@ -26,6 +26,7 @@ export interface AdminReviewBody {
 export interface KYCSubmissionResult {
   kycRecordId: string;
   kycStatus: KycStatus;
+  /** Pinata CIDs for private files (same keys as DB `documentUrls`). */
   documentUrls: string[];
   submittedAt: Date;
 }
@@ -41,12 +42,12 @@ export interface KYCReviewResult {
 
 /** Metadata returned after a successful file save. */
 export interface SavedFile {
+  /** Content identifier returned by Pinata upload. */
+  cid: string;
   /** Original name the user uploaded. */
   originalName: string;
-  /** Name on disk (user_[userId]_[ts]_[original]). */
+  /** Stored filename (user_[userId]_[ts]_[original]). */
   storedName: string;
-  /** Relative URL path: /uploads/kyc/<storedName>. */
-  relativePath: string;
   /** File size in bytes. */
   size: number;
   /** MIME type. */
@@ -80,9 +81,3 @@ export const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024;
 
 /** Maximum number of files per submission. */
 export const MAX_FILES_PER_SUBMISSION = 5;
-
-/** Upload destination relative to project root. */
-export const UPLOAD_DIR = './uploads/kyc';
-
-/** URL prefix served to the client. */
-export const UPLOAD_URL_PREFIX = '/uploads/kyc';

@@ -2,30 +2,43 @@
  * KYC File Upload Handler
  *
  * Uses the native Web FormData API (Next.js App Router compatible).
- * Files are stored locally in ./uploads/kyc/ with the format:
+ * Files are uploaded to Pinata private storage with the format:
  *   user_[userId]_[timestamp]_[originalName]
  */
 
-import path from 'path';
-import fs from 'fs';
+import { PinataSDK } from 'pinata';
 import {
   ALLOWED_MIME_TYPES,
   MAX_FILE_SIZE_BYTES,
   MAX_FILES_PER_SUBMISSION,
-  UPLOAD_DIR,
-  UPLOAD_URL_PREFIX,
   KYCError,
   type SavedFile,
 } from './types';
 
-// ── Ensure upload directory exists ───────────────────────────────────────────
+const pinata = new PinataSDK({
+  pinataJwt: process.env.PINATA_JWT,
+  pinataGateway: process.env.PINATA_GATEWAY,
+});
 
-const absoluteUploadDir = path.resolve(process.cwd(), UPLOAD_DIR);
+type LegacyUploadApi = {
+  file?: (file: File) => {
+    keyvalues: (keyvalues: Record<string, string>) => {
+      private: () => Promise<{ cid: string }>;
+    };
+  };
+};
 
-function ensureUploadDir(): void {
-  if (!fs.existsSync(absoluteUploadDir)) {
-    fs.mkdirSync(absoluteUploadDir, { recursive: true });
+async function uploadPrivateFile(
+  file: File,
+  keyvalues: Record<string, string>,
+): Promise<{ cid: string }> {
+  const legacyUpload = pinata.upload as unknown as LegacyUploadApi;
+
+  if (typeof legacyUpload.file === 'function') {
+    return legacyUpload.file(file).keyvalues(keyvalues).private();
   }
+
+  return pinata.upload.private.file(file).keyvalues(keyvalues);
 }
 
 // ── Next.js App Router helper ────────────────────────────────────────────────
@@ -38,8 +51,6 @@ function ensureUploadDir(): void {
 export async function handleFileUpload(
   request: Request,
 ): Promise<{ fields: Record<string, string>; files: SavedFile[] }> {
-  ensureUploadDir();
-
   const formData = await request.formData();
   const fields: Record<string, string> = {};
   const savedFiles: SavedFile[] = [];
@@ -89,17 +100,23 @@ export async function handleFileUpload(
     const timestamp = Date.now();
     const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
     const storedName = `user_${userId}_${timestamp}_${safeName}`;
-    const filePath = path.join(absoluteUploadDir, storedName);
 
-    // Write file to disk
+    // Upload file to Pinata private storage
     const arrayBuffer = await file.arrayBuffer();
-    const buffer = Buffer.from(arrayBuffer);
-    fs.writeFileSync(filePath, buffer);
+    const pinataFile = new File([arrayBuffer], storedName, {
+      type: file.type,
+    });
+
+    const upload = await uploadPrivateFile(pinataFile, {
+      userId,
+      type: 'kyc',
+      originalName: file.name,
+    });
 
     savedFiles.push({
+      cid: upload.cid,
       originalName: file.name,
       storedName,
-      relativePath: `${UPLOAD_URL_PREFIX}/${storedName}`,
       size: file.size,
       mimeType: file.type,
     });
