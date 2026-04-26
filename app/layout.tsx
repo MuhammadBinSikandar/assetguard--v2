@@ -8,6 +8,7 @@ import { ThemeProvider } from "@/components/theme-provider"
 import { ChatWidget } from "@/components/ai/chat-widget"
 import { ReduxProvider } from "@/store/redux/Provider"
 import { KYCPromptProvider } from "@/components/kyc/kyc-prompt-provider"
+import { WalletContextProvider } from "@/wallet/WalletContextProvider"
 
 export const metadata: Metadata = {
   title: "AssetGuard",
@@ -34,15 +35,17 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning className={`${inter.variable} ${spaceGrotesk.variable} antialiased`}>
       <body className="font-sans bg-background text-foreground">
-        <ReduxProvider>
-          <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
-            <KYCPromptProvider>
-              <Suspense fallback={<div>Loading...</div>}>{children}</Suspense>
-              <ChatWidget />
-              <Analytics />
-            </KYCPromptProvider>
-          </ThemeProvider>
-        </ReduxProvider>
+        <WalletContextProvider>
+          <ReduxProvider>
+            <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
+              <KYCPromptProvider>
+                <Suspense fallback={<div>Loading...</div>}>{children}</Suspense>
+                <ChatWidget />
+                <Analytics />
+              </KYCPromptProvider>
+            </ThemeProvider>
+          </ReduxProvider>
+        </WalletContextProvider>
       </body>
     </html>
   )
