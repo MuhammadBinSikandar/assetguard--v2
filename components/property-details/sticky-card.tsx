@@ -3,10 +3,26 @@
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { MapPin, ShieldCheck, Bed, Bath, Calendar, ExternalLink, Copy } from "lucide-react"
-import { useState } from "react"
-import { BuyFractionsModal } from "@/components/property-details/buy-fractions-modal"
+import { MapPin, ShieldCheck, ExternalLink, Copy, Coins } from "lucide-react"
+import { useCallback, useEffect, useMemo, useState } from "react"
+import { useWallet } from "@solana/wallet-adapter-react"
+import { BuyTokensModal } from "@/components/property-details/buy-tokens-modal"
 import { useToast } from "@/hooks/use-toast"
+
+const DEVNET_CLUSTER = "devnet"
+
+function walletExplorerAddressUrl(address: string) {
+  return `https://explorer.solana.com/address/${encodeURIComponent(address)}?cluster=${DEVNET_CLUSTER}`
+}
+
+function shortenAddress(addr: string) {
+  if (addr.length <= 12) return addr
+  return `${addr.slice(0, 4)}…${addr.slice(-4)}`
+}
+
+function fmtUSD(n: number) {
+  return n.toLocaleString("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 2 })
+}
 
 type Info = {
   id: string
@@ -14,30 +30,80 @@ type Info = {
   location: string
   price: number
   verified: boolean
-  size: string
-  bedrooms: number
-  bathrooms: number
-  yearBuilt: number
   roi: number
   image?: string
+  /** Active or sold marketplace listing; null if none */
+  listingOffer: {
+    listingId: string
+    referenceId: string
+    status: "ACTIVE" | "SOLD"
+    tokensListed: number
+    tokensRemaining: number
+    pricePerToken: number
+  } | null
+  /** Buy modal */
+  tokenSale?: {
+    agPricePerFractionUSD: number
+    availableFractions: number
+    totalFractions: number
+  }
 }
 
 export function PropertyStickyCard({ property }: { property: Info }) {
   const [open, setOpen] = useState(false)
   const { toast } = useToast()
+  const { publicKey, connected } = useWallet()
+  const [linkedWallet, setLinkedWallet] = useState<string | null>(null)
 
-  // Mock user wallet address - in production, this would come from actual wallet connection
-  const userWalletAddress = "7xKX...9mPq"
-  const fullWalletAddress = "7xKXy8mN9zLp4QrWvT3aH5bC2dE6fG9mPq"
+  const loadLinkedWallet = useCallback(async () => {
+    try {
+      const res = await fetch("/api/auth/me", { credentials: "include" })
+      if (!res.ok) return
+      const json = await res.json()
+      const w = json.data?.user?.walletAddress as string | null | undefined
+      setLinkedWallet(w && w.length > 0 ? w : null)
+    } catch {
+      /* ignore */
+    }
+  }, [])
+
+  useEffect(() => {
+    void loadLinkedWallet()
+  }, [loadLinkedWallet])
+
+  const fullWalletAddress = useMemo(() => {
+    if (publicKey) return publicKey.toBase58()
+    return linkedWallet
+  }, [publicKey, linkedWallet])
+
+  const userWalletDisplay = fullWalletAddress
+    ? shortenAddress(fullWalletAddress)
+    : connected
+      ? "…"
+      : "Connect or link wallet"
 
   const handleVerifyOwnership = () => {
-    // Redirect to Solana blockchain explorer with user's wallet address
-    const explorerUrl = `https://explorer.solana.com/address/${fullWalletAddress}`
-    window.open(explorerUrl, "_blank")
+    if (!fullWalletAddress) {
+      toast({
+        title: "No wallet",
+        description: "Connect your Solana wallet or link one in settings to verify token balances on devnet.",
+        variant: "destructive",
+      })
+      return
+    }
+    window.open(walletExplorerAddressUrl(fullWalletAddress), "_blank", "noopener,noreferrer")
   }
 
   const handleCopyWallet = () => {
-    navigator.clipboard.writeText(fullWalletAddress)
+    if (!fullWalletAddress) {
+      toast({
+        title: "No wallet",
+        description: "Connect your Solana wallet or link one in settings.",
+        variant: "destructive",
+      })
+      return
+    }
+    void navigator.clipboard.writeText(fullWalletAddress)
     toast({
       title: "Copied!",
       description: "Wallet address copied to clipboard",
@@ -66,38 +132,51 @@ export function PropertyStickyCard({ property }: { property: Info }) {
 
           <div className="text-3xl font-bold">${property.price.toLocaleString()}</div>
 
-          <div className="grid grid-cols-2 gap-3 text-sm">
-            <div>
-              <div className="text-xs text-muted-foreground">Size</div>
-              <div>{property.size}</div>
+          <div className="rounded-md border bg-muted/30 p-3 space-y-3 text-sm">
+            <div className="flex items-center gap-2 text-xs font-medium text-muted-foreground">
+              <Coins className="h-4 w-4" />
+              Marketplace listing
             </div>
-            <div className="inline-flex items-center gap-2">
-              <Bed className="h-4 w-4 text-muted-foreground" />
-              <span>{property.bedrooms} bd</span>
-            </div>
-            <div className="inline-flex items-center gap-2">
-              <Bath className="h-4 w-4 text-muted-foreground" />
-              <span>{property.bathrooms} ba</span>
-            </div>
-            <div className="inline-flex items-center gap-2">
-              <Calendar className="h-4 w-4 text-muted-foreground" />
-              <span>Built {property.yearBuilt || "—"}</span>
-            </div>
-          </div>
-
-          <div className="text-sm">
-            <span className="text-muted-foreground">Predicted ROI: </span>
-            <span className="text-emerald-600 font-medium">+{property.roi}%</span>
+            {property.listingOffer?.status === "ACTIVE" ? (
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div>
+                  <div className="text-xs text-muted-foreground">Tokens remaining for sale</div>
+                  <div className="text-base font-semibold tabular-nums">
+                    {property.listingOffer.tokensRemaining.toLocaleString()}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xs text-muted-foreground">Price per token</div>
+                  <div className="text-base font-semibold tabular-nums">
+                    {fmtUSD(property.listingOffer.pricePerToken)}
+                  </div>
+                </div>
+              </div>
+            ) : property.listingOffer?.status === "SOLD" ? (
+              <p className="text-sm text-muted-foreground">
+                This listing is marked sold
+                {property.listingOffer.tokensListed > 0
+                  ? ` (${property.listingOffer.tokensListed.toLocaleString()} tokens at ${fmtUSD(property.listingOffer.pricePerToken)} / token).`
+                  : "."}
+              </p>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                No active marketplace listing. Valuation above reflects the full property estimate.
+              </p>
+            )}
           </div>
 
           <div className="space-y-2 rounded-md bg-muted/50 p-3">
             <div className="text-xs font-medium text-muted-foreground">Your Wallet Address</div>
             <div className="flex items-center gap-2">
-              <code className="flex-1 text-sm font-mono">{userWalletAddress}</code>
+              <code className="flex-1 text-sm font-mono break-all" title={fullWalletAddress ?? undefined}>
+                {userWalletDisplay}
+              </code>
               <Button
                 variant="ghost"
                 size="icon"
                 className="h-8 w-8"
+                disabled={!fullWalletAddress}
                 onClick={handleCopyWallet}
               >
                 <Copy className="h-3.5 w-3.5" />
@@ -110,40 +189,40 @@ export function PropertyStickyCard({ property }: { property: Info }) {
               onClick={handleVerifyOwnership}
             >
               <ExternalLink className="mr-2 h-4 w-4" />
-              Verify Ownership on Explorer
+              Verify tokens on Solana Explorer (devnet)
             </Button>
           </div>
 
           <div className="flex flex-col gap-2 sm:flex-row">
-            <Button className="flex-1" onClick={() => setOpen(true)}>
-              Buy Fractions
+            <Button
+              className="flex-1"
+              disabled={!property.listingOffer || property.listingOffer.status !== "ACTIVE"}
+              onClick={() => setOpen(true)}
+            >
+              Buy tokens
             </Button>
             <Button variant="outline" className="flex-1 bg-transparent">
               Add to Watchlist
             </Button>
-            <Button variant="secondary" className="sm:w-auto">
+            {/* <Button variant="secondary" className="sm:w-auto">
               Share
-            </Button>
+            </Button> */}
           </div>
         </CardContent>
       </Card>
 
-      <BuyFractionsModal
-        open={open}
-        onOpenChange={setOpen}
-        property={{
-          id: property.id,
-          title: property.title,
-          // For image, we pass a placeholder; page will pass the real image via prop extension
-          image: property.image || "/modern-house-exterior.png",
-          agPricePerFractionUSD: 100, // demo price per fraction
-          availableFractions: 650,
-          totalFractions: 1000,
-          roi: property.roi,
-        }}
-        walletBalanceSol={25.4}
-        conversion={{ solUsd: 150 }}
-      />
+      {property.listingOffer?.status === "ACTIVE" && (
+        <BuyTokensModal
+          open={open}
+          onOpenChange={setOpen}
+          listingId={property.listingOffer.listingId}
+          propertyTitle={property.title}
+          referenceId={property.listingOffer.referenceId}
+          pricePerTokenUsd={property.listingOffer.pricePerToken}
+          tokensMax={property.listingOffer.tokensRemaining}
+          totalFractions={property.tokenSale?.totalFractions ?? 1000}
+        />
+      )}
     </>
   )
 }
