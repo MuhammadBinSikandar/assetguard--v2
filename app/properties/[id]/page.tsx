@@ -20,6 +20,8 @@ import type { PropertyType } from "@prisma/client"
 type PublicListing = {
     id: string
     status: "ACTIVE" | "SOLD"
+    sellerId: string
+    seller: { walletAddress: string | null } | null
     tokensListed: number
     tokensRemaining: number
     pricePerToken: number
@@ -34,6 +36,7 @@ type PublicProperty = {
     lot: string
     propertyAddress: string
     ownerName: string
+    walletAddress: string
     propertyType: PropertyType
     taxClass: string
     yearBuilt: number | null
@@ -88,8 +91,8 @@ function buildDetailModel(p: PublicProperty) {
 
     const amenities = [
         `Token symbol: ${p.tokenSymbol}`,
-        `Network: ${p.blockchainNetwork}`,
-        "Token-2022 standard",
+        `Network: ${p.blockchainNetwork}`
+        // "Token-2022 standard",
     ]
 
     const neighborhood = `${p.propertyAddress} — ${p.borough}. Owner of record on file: ${p.ownerName}.`
@@ -102,13 +105,14 @@ function buildDetailModel(p: PublicProperty) {
 
     const listingOffer = p.listing
         ? {
-              listingId: p.listing.id,
-              referenceId: p.referenceId,
-              status: p.listing.status,
-              tokensListed: p.listing.tokensListed,
-              tokensRemaining: p.listing.tokensRemaining,
-              pricePerToken: p.listing.pricePerToken,
-          }
+            listingId: p.listing.id,
+            referenceId: p.referenceId,
+            status: p.listing.status,
+            sellerWalletAddress: p.listing.seller?.walletAddress ?? p.walletAddress,
+            tokensListed: p.listing.tokensListed,
+            tokensRemaining: p.listing.tokensRemaining,
+            pricePerToken: p.listing.pricePerToken,
+        }
         : null
 
     return {
@@ -129,6 +133,7 @@ function buildDetailModel(p: PublicProperty) {
             verified: true,
             roi: 0,
             image: DEFAULT_IMAGES[0],
+            ownerWalletAddress: p.walletAddress,
             listingOffer,
             tokenSale,
         },
@@ -145,28 +150,28 @@ export default function PropertyDetailsPage() {
     useEffect(() => {
         if (!id) return
         let cancelled = false
-        ;(async () => {
-            setLoading(true)
-            setNotFound(false)
-            try {
-                const res = await fetch(`/api/properties/${id}`)
-                if (res.status === 404) {
+            ; (async () => {
+                setLoading(true)
+                setNotFound(false)
+                try {
+                    const res = await fetch(`/api/properties/${id}`)
+                    if (res.status === 404) {
+                        if (!cancelled) setNotFound(true)
+                        return
+                    }
+                    if (!res.ok) {
+                        if (!cancelled) setNotFound(true)
+                        return
+                    }
+                    const json = await res.json()
+                    if (!json.success || cancelled) return
+                    setProperty(json.data as PublicProperty)
+                } catch {
                     if (!cancelled) setNotFound(true)
-                    return
+                } finally {
+                    if (!cancelled) setLoading(false)
                 }
-                if (!res.ok) {
-                    if (!cancelled) setNotFound(true)
-                    return
-                }
-                const json = await res.json()
-                if (!json.success || cancelled) return
-                setProperty(json.data as PublicProperty)
-            } catch {
-                if (!cancelled) setNotFound(true)
-            } finally {
-                if (!cancelled) setLoading(false)
-            }
-        })()
+            })()
         return () => {
             cancelled = true
         }
