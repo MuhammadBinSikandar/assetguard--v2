@@ -1,3 +1,4 @@
+// app/api/properties/my-properties/route.ts
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/db/prismaClient';
 import { getUserFromAccessToken } from '@/lib/auth';
@@ -32,19 +33,39 @@ export async function GET(request: NextRequest) {
         submittedAt: true,
         reviewedAt: true,
         estimatedPriceUSD: true,
+        verifiedPriceUSD: true,
         walletAddress: true,
         adminNotes: true,
+        mintAddress: true,
+        tokenSupply: true,
+        pricePerToken: true,
+        tokenSymbol: true,
         _count: { select: { documents: true } },
       },
       orderBy: { submittedAt: 'desc' },
     });
+
+    const ids = properties.map((p) => p.id);
+    const myListings =
+      ids.length > 0
+        ? await prisma.propertyListing.findMany({
+            where: { sellerId: decoded.userId, propertyId: { in: ids } },
+            select: { id: true, status: true, propertyId: true },
+          })
+        : [];
+    const listingByProperty = new Map(myListings.map((l) => [l.propertyId, l] as const));
+
+    const data = properties.map((p) => ({
+      ...p,
+      listing: listingByProperty.get(p.id) ?? null,
+    }));
 
     apiLogger.response('GET', '/api/properties/my-properties', 200, true);
 
     return NextResponse.json(
       {
         success: true,
-        data: properties,
+        data,
       },
       { status: 200 },
     );

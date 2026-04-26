@@ -4,14 +4,59 @@ import { getUserFromAccessToken } from '@/lib/auth';
 import { propertyRegistrationSchema } from '@/lib/validations/property';
 import { generatePropertyReferenceId } from '@/lib/generateReferenceId';
 import { apiLogger } from '@/lib/debug-logger';
-import path from 'path';
-import fs from 'fs';
+import { triggerBackgroundScrape } from '@/lib/scraper/trigger-scrape';
+import { PinataSDK } from 'pinata';
 
 export const runtime = 'nodejs';
 
 const SOLANA_BASE58_REGEX = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/;
 const ALLOWED_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
 const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024; // 10 MB
+
+const pinata = new PinataSDK({
+  pinataJwt: process.env.PINATA_JWT,
+  pinataGateway: process.env.PINATA_GATEWAY,
+});
+
+type LegacyUploadApi = {
+  file?: (file: File) => {
+    keyvalues: (keyvalues: Record<string, string>) => {
+      private: () => Promise<{ cid: string }>;
+    };
+  };
+};
+
+type LegacyPrivateGatewayApi = {
+  createSignedURL?: (options: { cid: string; expires: number }) => Promise<string>;
+  createAccessLink?: (options: { cid: string; expires: number }) => Promise<string>;
+};
+
+async function uploadPrivateFile(
+  file: File,
+  keyvalues: Record<string, string>,
+): Promise<{ cid: string }> {
+  const legacyUpload = pinata.upload as unknown as LegacyUploadApi;
+
+  if (typeof legacyUpload.file === 'function') {
+    return legacyUpload.file(file).keyvalues(keyvalues).private();
+  }
+
+  return pinata.upload.private.file(file).keyvalues(keyvalues);
+}
+
+async function createPrivateSignedURL(cid: string): Promise<string> {
+  const privateGateway = pinata.gateways.private as unknown as LegacyPrivateGatewayApi;
+
+  if (typeof privateGateway.createSignedURL === 'function') {
+    return privateGateway.createSignedURL({ cid, expires: 3600 });
+  }
+
+  if (typeof privateGateway.createAccessLink === 'function') {
+    return privateGateway.createAccessLink({ cid, expires: 3600 });
+  }
+
+  throw new Error('Pinata private gateway signed URL API is unavailable.');
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -58,9 +103,10 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Helper: convert to number only when the string is a valid finite number
+    // Helper: convert to number only when the string is a valid finite number.
+    // Use explicit empty check — do not use `!val` (would mishandle if a non-string ever slipped in).
     const toNum = (val: string | undefined): number | undefined => {
-      if (!val) return undefined;
+      if (val === undefined || val === null || val === '') return undefined;
       const n = Number(val);
       return Number.isFinite(n) ? n : undefined;
     };
@@ -140,17 +186,24 @@ export async function POST(request: NextRequest) {
     const referenceId = generatePropertyReferenceId();
     const propertyId = crypto.randomUUID();
 
-    // Save file to disk (local uploads/ folder, matching KYC pattern)
-    const ext = path.extname(file.name).toLowerCase() || '.pdf';
-    const safeName = `title_deed${ext}`;
-    const uploadDir = path.join(process.cwd(), 'uploads', 'properties', propertyId);
-    fs.mkdirSync(uploadDir, { recursive: true });
-
-    const filePath = path.join(uploadDir, safeName);
+    // Upload title deed to Pinata private storage
+    const ext = file.name.toLowerCase().match(/\.[a-z0-9]+$/)?.[0] || '.pdf';
+    const safeOriginalName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+    const storedName = `property_${propertyId}_title_deed_${safeOriginalName || `document${ext}`}`;
     const arrayBuffer = await file.arrayBuffer();
-    fs.writeFileSync(filePath, Buffer.from(arrayBuffer));
+    const pinataFile = new File([arrayBuffer], storedName, {
+      type: file.type,
+    });
 
-    const fileUrl = `/uploads/properties/${propertyId}/${safeName}`;
+    const upload = await uploadPrivateFile(pinataFile, {
+      userId: user.id,
+      propertyId,
+      type: 'property_document',
+      documentType: 'title_deed',
+      originalName: file.name,
+    });
+
+    const fileUrl = await createPrivateSignedURL(upload.cid);
 
     // 7-9. Create Property, Document, and StatusHistory in a transaction
     const property = await prisma.$transaction(async (tx) => {
@@ -204,7 +257,28 @@ export async function POST(request: NextRequest) {
       return prop;
     });
 
-    // 10. Return response
+    // 10. Create verification record and trigger background scraping
+    try {
+      await prisma.propertyVerificationData.create({
+        data: {
+          propertyId: property.id,
+          scrapeStatus: 'PENDING',
+        },
+      });
+
+      // Fire-and-forget — do NOT await; let registration return immediately
+      triggerBackgroundScrape(
+        property.id,
+        data.borough,
+        data.block,
+        data.lot,
+      );
+    } catch (scrapeErr) {
+      console.error('[Properties Register] Failed to start verification scrape:', scrapeErr);
+      // Non-blocking — property registration is still successful
+    }
+
+    // 11. Return response
     const wallet = user.walletAddress!;
     const truncatedWallet = `${wallet.slice(0, 4)}...${wallet.slice(-3)}`;
 
