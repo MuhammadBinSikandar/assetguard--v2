@@ -67,21 +67,20 @@ export async function PATCH(
 
     if (action === 'APPROVE') {
       const mintUrl = `${request.nextUrl.origin}/api/admin/mint-property`;
-      const cookieHeader = request.headers.get('cookie');
 
       try {
-        const mintRes = await fetch(mintUrl, {
+        const req = new NextRequest(mintUrl, {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(cookieHeader ? { cookie: cookieHeader } : {}),
-          },
-          cache: 'no-store',
+          headers: request.headers,
           body: JSON.stringify({
             propertyId: result.id,
             userWalletAddress: result.walletAddress,
           }),
         });
+
+        // Call the mint-property route handler directly to avoid Next.js local fetch issues
+        const { POST: mintPropertyPOST } = await import('@/app/api/admin/mint-property/route');
+        const mintRes = await mintPropertyPOST(req);
 
         const mintJson = await mintRes.json().catch(() => ({}));
 

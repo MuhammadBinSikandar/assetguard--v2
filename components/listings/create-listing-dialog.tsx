@@ -155,8 +155,7 @@ export function CreateListingDialog({
                 <DialogHeader>
                     <DialogTitle>List property tokens</DialogTitle>
                     <DialogDescription>
-                        Choose an approved, minted property and how many tokens to list. New mints hold supply in
-                        platform custody so sales do not require a separate wallet approval.
+                        Choose an approved, minted property and how many tokens to list. You will need to authorize sales from your wallet after listing.
                     </DialogDescription>
                 </DialogHeader>
 

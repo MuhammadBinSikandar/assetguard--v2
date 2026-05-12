@@ -1,57 +1,109 @@
 "use client"
 
-import * as React from "react"
-import { Hero } from "@/components/opportunities/hero"
-import { FilterBar, type FilterState, defaultFilterState } from "@/components/opportunities/filter-bar"
-import { OpportunitiesGrid } from "@/components/opportunities/opportunities-grid"
-import { allOpportunities } from "@/components/opportunities/data"
-import { Separator } from "@/components/ui/separator"
+import { useEffect, useMemo, useState, useCallback } from "react"
 import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar"
 import { DashboardSidebar } from "@/components/dashboard/sidebar"
 import { TopBar } from "@/components/dashboard/topbar"
+import { Separator } from "@/components/ui/separator"
+import { Card, CardContent } from "@/components/ui/card"
+import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
+import { Skeleton } from "@/components/ui/skeleton"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Slider } from "@/components/ui/slider"
+import { Label } from "@/components/ui/label"
 import { useIsMobile } from "@/components/ui/use-mobile"
+import { AIDiscoveries } from "@/components/AIDiscoveries"
+import { ROIBadge, ROIBadgeSkeleton, ROIBadgeFallback } from "@/components/ROIBadge"
+import type { BoroughStat } from "@/types/roi"
+import type { ROIResult, ROIProjection } from "@/types/roi"
+import Link from "next/link"
+import {
+  Sparkles,
+} from "lucide-react"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
+
+/* ─────────────────────── Types ─────────────────────── */
+
+interface PropertyListing {
+  id: string
+  propertyAddress: string
+  borough: string
+  block: string
+  lot: string
+  propertyType: string
+  estimatedPriceUSD: number
+  verifiedPriceUSD: number | null
+  totalAreaSqFt: number | null
+  residentialUnits: number | null
+  commercialUnits: number | null
+  yearBuilt: number | null
+}
+
+type SortBy = "roi" | "newest" | "price"
+
+const BOROUGHS = ["All", "Bronx", "Brooklyn", "Manhattan", "Queens", "Staten Island"] as const
+
+const fmtUSD = new Intl.NumberFormat("en-US", {
+  style: "currency",
+  currency: "USD",
+  maximumFractionDigits: 0,
+})
+
+
+
+/* ───────────────── Main Page ───────────────────────── */
 
 export default function OpportunitiesPage() {
-  const [filters, setFilters] = React.useState<FilterState>(defaultFilterState)
-  const [query, setQuery] = React.useState<string>("")
   const isMobile = useIsMobile()
 
-  // Derived filtered + sorted data
-  const filtered = React.useMemo(() => {
-    const { budget, minRoiPct, riskLevels, locations, horizon, sortBy } = filters
-    const [minBudget, maxBudget] = budget
-    let list = allOpportunities.filter((o) => {
-      const inBudget = o.price >= minBudget && o.price <= maxBudget
-      const meetsRoi = o.predictedRoiPct >= minRoiPct
-      const riskOk = riskLevels.length ? riskLevels.includes(o.riskLevel) : true
-      const locOk = locations.length ? locations.includes(o.location) : true
-      const horizonOk = horizon === "any" ? true : o.horizon === horizon
-      const matchesQuery = query
-        ? (o.title + " " + o.location + " " + o.why.join(" ")).toLowerCase().includes(query.toLowerCase())
-        : true
-      return inBudget && meetsRoi && riskOk && locOk && horizonOk && matchesQuery
-    })
-    list = list.sort((a, b) => {
-      if (sortBy === "roi") return b.predictedRoiPct - a.predictedRoiPct
-      if (sortBy === "confidence") return b.confidence - a.confidence
-      return a.price - b.price // price ascending
-    })
-    return list
-  }, [filters, query])
+  // Property listings
+  const [properties, setProperties] = useState<PropertyListing[]>([])
+  const [propsLoading, setPropsLoading] = useState(true)
+
+  // Fetch all approved properties
+  useEffect(() => {
+    async function load() {
+      try {
+        const res = await fetch("/api/opportunities/listings")
+        if (res.ok) {
+          const data = await res.json()
+          setProperties(data.data ?? [])
+        }
+      } catch { /* silent */ }
+      finally { setPropsLoading(false) }
+    }
+    load()
+  }, [])
+
+
 
   return (
     <SidebarProvider defaultOpen={!isMobile}>
       <DashboardSidebar />
       <SidebarInset className="min-h-svh">
         <TopBar />
-        <main className="container mx-auto px-4 py-6">
-          <Hero onSearch={setQuery} />
-          <Separator className="my-6" />
-          {/* Removed grid layout and ModelSidebar, made opportunities full width */}
-          <div className="space-y-6">
-            <FilterBar filters={filters} onChange={setFilters} />
-            <OpportunitiesGrid items={filtered} />
-          </div>
+        <main className="container mx-auto px-4 py-6 space-y-8">
+
+          {/* ── Hero ── */}
+          <header className="space-y-2">
+            <div className="flex items-center gap-2">
+              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10">
+                <Sparkles className="h-5 w-5 text-primary" />
+              </div>
+              <div>
+                <h1 className="text-2xl font-bold tracking-tight">Investment Opportunities</h1>
+                <p className="text-sm text-muted-foreground">
+                  ML-powered ROI projections for tokenized NYC real estate
+                </p>
+              </div>
+            </div>
+          </header>
+
+          {/* ── Section A: Top AI Discoveries ── */}
+          <section>
+            <AIDiscoveries registeredProperties={properties as any} />
+          </section>
         </main>
       </SidebarInset>
     </SidebarProvider>

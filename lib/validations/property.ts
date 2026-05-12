@@ -83,7 +83,7 @@ export const propertyRegistrationSchema = z.object({
     .min(1600, 'Year built must be at least 1600')
     .max(currentYear, `Year built cannot exceed ${currentYear}`)
     .optional(),
-  stories: z.number().int().min(0, 'Stories cannot be negative').optional(),
+  stories: z.number().min(0, 'Stories cannot be negative').optional(),
   totalAreaSqFt: z
     .number()
     .min(0, 'Total area cannot be negative')

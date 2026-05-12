@@ -63,17 +63,13 @@ export function DashboardSidebar() {
       <Sidebar collapsible="icon" variant="sidebar" className="border-r">
         <SidebarHeader>
           <Link href="/dashboard" className="flex items-center gap-2 px-2 py-1.5">
-            <span className="inline-flex h-8 w-8 items-center justify-center rounded-md bg-primary text-primary-foreground">
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                viewBox="0 0 24 24"
-                className="h-5 w-5"
-                fill="currentColor"
-                aria-hidden="true"
-              >
-                <path d="M7 2h10a1 1 0 0 1 1 1v5a1 1 0 0 1-.553.894l-5 2.5a1 1 0 0 1-.894 0l-5-2.5A1 1 0 0 1 6 8V3a1 1 0 0 1 1-1Zm-1 9.236 5 2.5a3 3 0 0 0 2.684 0l5-2.5V20a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V11.236Z" />
-              </svg>
-            </span>
+            <div className="flex items-center justify-center h-8 w-8">
+              <img 
+                src="/AG_Token_Logo-removebg-preview.png" 
+                alt="AG Logo" 
+                className="h-full w-full object-contain"
+              />
+            </div>
             <span className="font-semibold tracking-tight">AssetGuard</span>
           </Link>
         </SidebarHeader>

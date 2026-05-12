@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/db/prismaClient';
 import { getUserFromAccessToken } from '@/lib/auth';
 import { apiLogger } from '@/lib/debug-logger';
-import { getWalletMintBalance } from '@/lib/solana/token-balances';
+import { getWalletMintBalance, getAllWalletTokenBalances } from '@/lib/solana/token-balances';
 
 export async function GET(request: NextRequest) {
   try {
@@ -56,16 +56,23 @@ export async function GET(request: NextRequest) {
         : [];
     const listingByProperty = new Map(myListings.map((l) => [l.propertyId, l] as const));
 
-    const data = await Promise.all(
-      properties.map(async (p) => {
-        const onChainBalance = await getWalletMintBalance(p.walletAddress, p.mintAddress);
+    const uniqueWallets = Array.from(new Set(properties.map((p) => p.walletAddress).filter(Boolean)));
+    const walletBalances = new Map<string, Map<string, number>>();
+    await Promise.all(
+      uniqueWallets.map(async (wallet) => {
+        walletBalances.set(wallet, await getAllWalletTokenBalances(wallet));
+      })
+    );
+
+    const data = properties.map((p) => {
+        const balances = walletBalances.get(p.walletAddress);
+        const onChainBalance = (balances && p.mintAddress) ? balances.get(p.mintAddress) : undefined;
         return {
           ...p,
-          currentWalletTokens: onChainBalance != null ? Math.floor(onChainBalance) : null,
+          currentWalletTokens: onChainBalance !== undefined ? Math.floor(onChainBalance) : null,
           listing: listingByProperty.get(p.id) ?? null,
         };
-      }),
-    );
+      });
 
     apiLogger.response('GET', '/api/properties/my-properties', 200, true);
 

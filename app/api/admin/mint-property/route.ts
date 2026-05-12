@@ -281,22 +281,21 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 9f–9g. Mint full supply to the **platform (admin) ATA** for automatic marketplace custody.
-    // SPL `Approve` requires the token *owner* to sign, so we cannot delegate from the owner's
-    // wallet in this admin-only tx. Holding the supply on the admin ATA lets `POST .../buy`
-    // transfer to buyers without a separate seller authorization (see `resolveCustodyForTransfer`).
-    const adminAta = getAssociatedTokenAddressSync(
+    // 9f–9g. Mint full supply to the **user's wallet ATA**.
+    // This gives the user direct custody of the tokens upon minting.
+    // They will need to sign an Approve delegate transaction later when listing them.
+    const userAta = getAssociatedTokenAddressSync(
       mint,
-      adminKeypair.publicKey,
+      userWallet,
       false,
       TOKEN_2022_PROGRAM_ID,
     );
 
     transaction.add(
       createAssociatedTokenAccountInstruction(
-        adminKeypair.publicKey,
-        adminAta,
-        adminKeypair.publicKey,
+        adminKeypair.publicKey, // fee payer
+        userAta,
+        userWallet,
         mint,
         TOKEN_2022_PROGRAM_ID,
       ),
@@ -305,7 +304,7 @@ export async function POST(request: NextRequest) {
     transaction.add(
       createMintToInstruction(
         mint,
-        adminAta,
+        userAta,
         adminKeypair.publicKey,
         BigInt(tokenSupply) * BigInt(10 ** decimals),
         [],
@@ -415,7 +414,7 @@ export async function POST(request: NextRequest) {
           block: property.block,
           lot: property.lot,
           userWallet: userWalletAddress,
-          custodyAta: adminAta.toBase58(),
+          custodyAta: userAta.toBase58(),
         }),
         success: true,
       },
@@ -426,13 +425,13 @@ export async function POST(request: NextRequest) {
       {
         success: true,
         message:
-          'Property tokens minted to platform custody. Listings and purchases can settle without a seller Approve transaction.',
+          'Property tokens successfully minted directly to the registrant\'s wallet. The user will need to authorize sales when listing.',
         data: {
           mintAddress,
           signature,
           tokenSupply,
           pricePerToken,
-          custodyAta: adminAta.toBase58(),
+          custodyAta: userAta.toBase58(),
           ownerWallet: userWallet.toBase58(),
           explorerUrl: `https://explorer.solana.com/address/${mintAddress}?cluster=devnet`,
           txUrl: `https://explorer.solana.com/tx/${signature}?cluster=devnet`,

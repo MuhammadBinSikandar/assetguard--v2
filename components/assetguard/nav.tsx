@@ -23,18 +23,13 @@ export function Nav() {
       <nav className="mx-auto flex max-w-7xl items-center justify-between px-4 py-3 md:px-6">
         <div className="flex items-center gap-3">
           <Link href="#" className="inline-flex items-center gap-2">
-            <span className="inline-flex h-8 w-8 items-center justify-center rounded-md bg-primary text-primary-foreground">
-              {/* blockchain icon */}
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                viewBox="0 0 24 24"
-                className="h-5 w-5"
-                fill="currentColor"
-                aria-hidden="true"
-              >
-                <path d="M7 2h10a1 1 0 0 1 1 1v5a1 1 0 0 1-.553.894l-5 2.5a1 1 0 0 1-.894 0l-5-2.5A1 1 0 0 1 6 8V3a1 1 0 0 1 1-1Zm-1 9.236 5 2.5a3 3 0 0 0 2.684 0l5-2.5V20a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V11.236Z" />
-              </svg>
-            </span>
+            <div className="flex items-center justify-center h-10 w-10">
+              <img 
+                src="/AG_Token_Logo-removebg-preview.png" 
+                alt="AG Logo" 
+                className="h-full w-full object-contain"
+              />
+            </div>
             <span className="font-semibold text-lg tracking-tight" style={{ fontFamily: "var(--font-space-grotesk)" }}>
               AssetGuard
             </span>

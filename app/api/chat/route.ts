@@ -9,7 +9,7 @@ import fs from "node:fs";
 // ─── Configuration ───────────────────────────────────────────────
 const OLLAMA_BASE_URL = process.env.OLLAMA_BASE_URL ?? "http://localhost:11434";
 const CHAT_MODEL = process.env.OLLAMA_CHAT_MODEL ?? "tinyllama";
-const EMBED_MODEL = "nomic-embed-text";
+const EMBED_MODEL = "all-minilm";
 const KB_PATH = path.join(
   process.cwd(),
   "documents",

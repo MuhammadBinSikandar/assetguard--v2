@@ -58,3 +58,44 @@ export async function getWalletMintBalance(
         return null;
     }
 }
+
+/**
+ * Returns a map of all token balances for a given wallet address.
+ */
+export async function getAllWalletTokenBalances(
+    ownerWalletAddress: string | null | undefined,
+): Promise<Map<string, number>> {
+    const balances = new Map<string, number>();
+    if (!ownerWalletAddress) return balances;
+
+    try {
+        const owner = new PublicKey(ownerWalletAddress);
+        const connection = getConnection();
+
+        const [token2022Accounts, tokenAccounts] = await Promise.all([
+            connection.getParsedTokenAccountsByOwner(owner, { programId: TOKEN_2022_PROGRAM_ID }),
+            connection.getParsedTokenAccountsByOwner(owner, { programId: TOKEN_PROGRAM_ID }),
+        ]);
+
+        const processAccounts = (response: Awaited<ReturnType<Connection['getParsedTokenAccountsByOwner']>>) => {
+            for (const item of response.value) {
+                const parsedInfo = (item.account.data as { parsed?: { info?: { mint?: string; tokenAmount?: { uiAmount?: number | null } } } })
+                    ?.parsed?.info;
+                if (!parsedInfo || !parsedInfo.mint) continue;
+                const mint = parsedInfo.mint;
+                const uiAmount = Number(parsedInfo.tokenAmount?.uiAmount ?? 0);
+                if (Number.isFinite(uiAmount)) {
+                    balances.set(mint, (balances.get(mint) ?? 0) + uiAmount);
+                }
+            }
+        };
+
+        processAccounts(token2022Accounts);
+        processAccounts(tokenAccounts);
+
+    } catch (e) {
+        console.error("Failed to fetch all wallet token balances", e);
+    }
+
+    return balances;
+}

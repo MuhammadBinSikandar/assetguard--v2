@@ -4,7 +4,7 @@ import { getUserFromAccessToken } from '@/lib/auth';
 import { apiLogger } from '@/lib/debug-logger';
 import { resolvePropertyTokenSupply, resolvePropertyPricePerToken } from '@/lib/property-tokens';
 import { effectivePropertyValuationUsd } from '@/lib/property-valuation';
-import { getWalletMintBalance } from '@/lib/solana/token-balances';
+import { getWalletMintBalance, getAllWalletTokenBalances } from '@/lib/solana/token-balances';
 
 export async function GET(_req: NextRequest) {
   try {
@@ -82,7 +82,9 @@ export async function GET(_req: NextRequest) {
       myListingRows.map((x) => [x.propertyId, x] as const),
     );
 
-    const dataRows = await Promise.all(allIdsList.map(async (propertyId) => {
+    const allBalances = await getAllWalletTokenBalances(me?.walletAddress);
+
+    const dataRows = allIdsList.map((propertyId) => {
       const r = fromPo.get(propertyId);
       const l = fromListing.get(propertyId);
       const p = r?.property ?? l?.property;
@@ -91,8 +93,8 @@ export async function GET(_req: NextRequest) {
       const fromPurchases = r?.tokensOwned ?? 0;
       const inListing = l ? l.tokensRemaining : 0;
       const dbTotalTokens = fromPurchases + inListing;
-      const onChainBalance = await getWalletMintBalance(me?.walletAddress, p.mintAddress);
-      const totalTokens = onChainBalance != null ? Math.floor(onChainBalance) : dbTotalTokens;
+      const onChainBalance = p.mintAddress ? allBalances.get(p.mintAddress) : undefined;
+      const totalTokens = onChainBalance !== undefined ? Math.floor(onChainBalance) : dbTotalTokens;
       const myListing = myListingByProperty.get(propertyId) ?? null;
 
       const supply = resolvePropertyTokenSupply(p.tokenSupply);
@@ -139,7 +141,7 @@ export async function GET(_req: NextRequest) {
           verifiedPriceUSD: p.verifiedPriceUSD,
         },
       };
-    }));
+    });
 
     const data = dataRows.filter((x) => x != null) as {
       ownershipId: string;

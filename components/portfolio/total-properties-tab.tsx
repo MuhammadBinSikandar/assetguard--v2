@@ -5,11 +5,12 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import Link from "next/link"
-import { Building2, CheckCircle2, Loader2, Users } from "lucide-react"
+import { Building2, CheckCircle2, Loader2, Users, TrendingUp } from "lucide-react"
 import { effectivePropertyValuationUsd } from "@/lib/property-valuation"
 import { resolvePropertyPricePerToken, resolvePropertyTokenSupply } from "@/lib/property-tokens"
 import { CreateListingDialog } from "@/components/listings/create-listing-dialog"
 import { CreateCoownerListingDialog } from "@/components/listings/create-coowner-listing-dialog"
+
 
 type PropertyItem = {
   id: string
@@ -64,6 +65,7 @@ type CoRow = {
 const fmtDate = (d: string) => new Date(d).toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" })
 const fmtUSD = (v: number) => `$${v.toLocaleString()}`
 
+
 export function TotalPropertiesTab() {
   const [properties, setProperties] = useState<PropertyItem[]>([])
   const [coRows, setCoRows] = useState<CoRow[]>([])
@@ -102,6 +104,7 @@ export function TotalPropertiesTab() {
     void load()
   }, [load])
 
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-16">
@@ -131,6 +134,7 @@ export function TotalPropertiesTab() {
 
   const hasAny = properties.length > 0 || coOnly.length > 0
 
+
   if (!hasAny) {
     return (
       <Card>
@@ -154,25 +158,18 @@ export function TotalPropertiesTab() {
 
   return (
     <>
-      <section className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-3">
+      {/* ── Portfolio Summary Bar ── */}
+      <section className="mb-6 grid grid-cols-1 gap-4 sm:grid-cols-2">
         <Card>
           <CardContent className="p-4 text-center">
-            <p className="mb-1 text-xs text-muted-foreground">Properties &amp; co-investments</p>
+            <p className="mb-1 text-xs text-muted-foreground">Total Properties</p>
             <p className="text-2xl font-bold">{properties.length + coOnly.length}</p>
           </CardContent>
         </Card>
         <Card>
           <CardContent className="p-4 text-center">
-            <p className="mb-1 text-xs text-muted-foreground">Total portfolio (est.)</p>
+            <p className="mb-1 text-xs text-muted-foreground">Portfolio Value (est.)</p>
             <p className="text-2xl font-bold">{fmtUSD(Math.round(totalValue))}</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardContent className="p-4 text-center">
-            <p className="mb-1 text-xs text-muted-foreground">Documents (registered only)</p>
-            <p className="text-2xl font-bold">
-              {properties.reduce((sum, p) => sum + p._count.documents, 0)}
-            </p>
           </CardContent>
         </Card>
       </section>
@@ -207,6 +204,7 @@ export function TotalPropertiesTab() {
                         Approved
                       </Badge>
                     </div>
+
 
                     <div className="space-y-1.5 text-sm">
                       <div className="flex justify-between">

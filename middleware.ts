@@ -61,6 +61,8 @@ const EXCLUDED_API_ROUTES = [
   '/api/auth/forgot-password',
   '/api/auth/reset-password',
   '/api/auth/get-pending-email',
+  '/api/opportunities/borough-stats',
+  '/api/opportunities/listings',
 ];
 
 /**
